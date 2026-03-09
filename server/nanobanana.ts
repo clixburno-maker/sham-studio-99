@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { randomUUID } from "crypto";
+import sharp from "sharp";
 
 import { getApiKey } from "./api-keys";
 
@@ -310,7 +311,12 @@ export async function generateVideoLTX(imageUrl: string, prompt: string, duratio
       console.log(`[video-gen-ltx] Image downloaded: ${originalSizeMB.toFixed(1)}MB (${imgContentType})`);
 
       if (imgBuffer.length > 4 * 1024 * 1024) {
-        console.log(`[video-gen-ltx] Image is ${originalSizeMB.toFixed(1)}MB, proceeding without compression`);
+        console.log(`[video-gen-ltx] Compressing image from ${originalSizeMB.toFixed(1)}MB to JPEG for LTX...`);
+        imgBuffer = await sharp(imgBuffer)
+          .resize(1920, 1080, { fit: "inside", withoutEnlargement: true })
+          .jpeg({ quality: 85 })
+          .toBuffer();
+        console.log(`[video-gen-ltx] Compressed to ${(imgBuffer.length / 1024 / 1024).toFixed(1)}MB JPEG`);
       }
 
       const wasCompressed = imgBuffer.length < (originalSizeMB * 1024 * 1024);

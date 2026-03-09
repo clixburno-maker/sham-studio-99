@@ -1,4 +1,5 @@
 import PDFDocument from "pdfkit";
+import sharp from "sharp";
 import type { Response } from "express";
 import type { Project, Scene, GeneratedImage } from "@shared/schema";
 import https from "https";
@@ -41,7 +42,16 @@ const PDF_IMAGE_MAX_WIDTH = 1200;
 const PDF_JPEG_QUALITY = 85;
 
 async function optimizeForPdf(buffer: Buffer): Promise<Buffer> {
-  return buffer;
+  try {
+    const metadata = await sharp(buffer).metadata();
+    let pipeline = sharp(buffer);
+    if (metadata.width && metadata.width > PDF_IMAGE_MAX_WIDTH) {
+      pipeline = pipeline.resize({ width: PDF_IMAGE_MAX_WIDTH, withoutEnlargement: true });
+    }
+    return await pipeline.jpeg({ quality: PDF_JPEG_QUALITY, mozjpeg: true }).toBuffer();
+  } catch {
+    return buffer;
+  }
 }
 
 async function prefetchImages(images: GeneratedImage[]): Promise<Map<string, Buffer>> {
