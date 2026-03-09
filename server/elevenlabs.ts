@@ -1,5 +1,5 @@
-const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
-const ELEVENLABS_API_URL = "https://api.elevenlabs.io/v1";
+const KIE_API_KEY = process.env.ELEVENLABS_API_KEY;
+const KIE_BASE_URL = "https://api.kie.ai/api/v1";
 
 export interface Voice {
   voice_id: string;
@@ -8,117 +8,158 @@ export interface Voice {
   description: string;
 }
 
-const VOICE_DESCRIPTIONS: Record<string, string> = {
-  "Rachel": "Calm, young female",
-  "Aria": "Expressive, young female",
-  "Roger": "Confident male",
-  "Sarah": "Soft, young female",
-  "Laura": "Upbeat female",
-  "Charlie": "Casual, Australian male",
-  "George": "Warm, British male",
-  "Callum": "Intense, transatlantic male",
-  "River": "Confident, American non-binary",
-  "Liam": "Articulate, young male",
-  "Charlotte": "Seductive, Swedish female",
-  "Alice": "Confident, British female",
-  "Matilda": "Warm, friendly female",
-  "Will": "Friendly, young male",
-  "Jessica": "Expressive, female",
-  "Eric": "Friendly, middle-aged male",
-  "Chris": "Casual, male",
-  "Brian": "Deep, narrator male",
-  "Daniel": "Authoritative, British male",
-  "Lily": "Warm, British female",
-  "Bill": "Trustworthy, narrator male",
-};
-
-let cachedVoiceMap: Map<string, string> | null = null;
-
-async function fetchVoiceMap(): Promise<Map<string, string>> {
-  if (cachedVoiceMap) return cachedVoiceMap;
-
-  if (!ELEVENLABS_API_KEY) return new Map();
-
-  try {
-    const res = await fetch(`${ELEVENLABS_API_URL}/voices`, {
-      headers: { "xi-api-key": ELEVENLABS_API_KEY },
-    });
-    if (res.ok) {
-      const data = (await res.json()) as any;
-      const map = new Map<string, string>();
-      for (const v of data.voices || []) {
-        map.set(v.name.toLowerCase(), v.voice_id);
-      }
-      cachedVoiceMap = map;
-      console.log(`[TTS] Cached ${map.size} voices from ElevenLabs`);
-      return map;
-    }
-  } catch (err) {
-    console.error(`[TTS] Failed to fetch voices from ElevenLabs:`, err);
-  }
-  return new Map();
-}
+const AVAILABLE_VOICES: Voice[] = [
+  { voice_id: "Rachel", name: "Rachel", category: "premade", description: "Calm, young female" },
+  { voice_id: "Aria", name: "Aria", category: "premade", description: "Expressive, young female" },
+  { voice_id: "Roger", name: "Roger", category: "premade", description: "Confident male" },
+  { voice_id: "Sarah", name: "Sarah", category: "premade", description: "Soft, young female" },
+  { voice_id: "Laura", name: "Laura", category: "premade", description: "Upbeat female" },
+  { voice_id: "Charlie", name: "Charlie", category: "premade", description: "Casual, Australian male" },
+  { voice_id: "George", name: "George", category: "premade", description: "Warm, British male" },
+  { voice_id: "Callum", name: "Callum", category: "premade", description: "Intense, transatlantic male" },
+  { voice_id: "River", name: "River", category: "premade", description: "Confident, American non-binary" },
+  { voice_id: "Liam", name: "Liam", category: "premade", description: "Articulate, young male" },
+  { voice_id: "Charlotte", name: "Charlotte", category: "premade", description: "Seductive, Swedish female" },
+  { voice_id: "Alice", name: "Alice", category: "premade", description: "Confident, British female" },
+  { voice_id: "Matilda", name: "Matilda", category: "premade", description: "Warm, friendly female" },
+  { voice_id: "Will", name: "Will", category: "premade", description: "Friendly, young male" },
+  { voice_id: "Jessica", name: "Jessica", category: "premade", description: "Expressive, female" },
+  { voice_id: "Eric", name: "Eric", category: "premade", description: "Friendly, middle-aged male" },
+  { voice_id: "Chris", name: "Chris", category: "premade", description: "Casual, male" },
+  { voice_id: "Brian", name: "Brian", category: "premade", description: "Deep, narrator male" },
+  { voice_id: "Daniel", name: "Daniel", category: "premade", description: "Authoritative, British male" },
+  { voice_id: "Lily", name: "Lily", category: "premade", description: "Warm, British female" },
+  { voice_id: "Bill", name: "Bill", category: "premade", description: "Trustworthy, narrator male" },
+];
 
 export async function getVoices(): Promise<Voice[]> {
-  const voiceMap = await fetchVoiceMap();
-
-  const voices: Voice[] = [];
-  for (const [name, description] of Object.entries(VOICE_DESCRIPTIONS)) {
-    const realId = voiceMap.get(name.toLowerCase()) || name;
-    voices.push({
-      voice_id: realId,
-      name,
-      category: "premade",
-      description,
-    });
-  }
-  return voices;
+  return AVAILABLE_VOICES;
 }
 
 export async function generateVoiceover(
   text: string,
   voiceId: string = "Brian"
 ): Promise<Buffer> {
-  if (!ELEVENLABS_API_KEY) {
+  if (!KIE_API_KEY) {
     throw new Error("ELEVENLABS_API_KEY is not configured");
   }
 
-  const voiceMap = await fetchVoiceMap();
+  console.log(`[TTS] Using kie.ai proxy with voice: ${voiceId}`);
 
-  let resolvedVoiceId = voiceId;
-  const lookupById = voiceMap.get(voiceId.toLowerCase());
-  if (lookupById) {
-    resolvedVoiceId = lookupById;
-  }
-
-  console.log(`[TTS] Using ElevenLabs API with voice: ${voiceId} (id: ${resolvedVoiceId})`);
-
-  const res = await fetch(`${ELEVENLABS_API_URL}/text-to-speech/${resolvedVoiceId}`, {
+  const createRes = await fetch(`${KIE_BASE_URL}/jobs/createTask`, {
     method: "POST",
     headers: {
-      "xi-api-key": ELEVENLABS_API_KEY,
+      "Authorization": `Bearer ${KIE_API_KEY}`,
       "Content-Type": "application/json",
-      "Accept": "audio/mpeg",
     },
     body: JSON.stringify({
-      text,
-      model_id: "eleven_multilingual_v2",
-      voice_settings: {
+      model: "elevenlabs/text-to-speech-multilingual-v2",
+      input: {
+        text,
+        voice: voiceId,
         stability: 0.5,
         similarity_boost: 0.75,
         style: 0.5,
-        use_speaker_boost: true,
+        speed: 1.0,
       },
     }),
   });
 
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`ElevenLabs API error ${res.status}: ${errText}`);
+  if (!createRes.ok) {
+    const errText = await createRes.text();
+    throw new Error(`kie.ai TTS create error: ${createRes.status} ${errText}`);
   }
 
-  console.log(`[TTS] ElevenLabs response received, downloading audio...`);
-  const arrayBuffer = await res.arrayBuffer();
-  console.log(`[TTS] Audio downloaded: ${arrayBuffer.byteLength} bytes`);
-  return Buffer.from(arrayBuffer);
+  const createData = (await createRes.json()) as any;
+  if (createData.code !== 200 || !createData.data?.taskId) {
+    throw new Error(`kie.ai TTS create failed: ${JSON.stringify(createData)}`);
+  }
+
+  const taskId = createData.data.taskId;
+  console.log(`[TTS] Task created: ${taskId}, polling for result...`);
+
+  const maxAttempts = 60;
+  const pollInterval = 5000;
+
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise((r) => setTimeout(r, pollInterval));
+
+    const statusRes = await fetch(`${KIE_BASE_URL}/jobs/recordInfo?taskId=${taskId}`, {
+      headers: {
+        "Authorization": `Bearer ${KIE_API_KEY}`,
+      },
+    });
+
+    if (!statusRes.ok) {
+      console.log(`[TTS] Poll attempt ${i + 1} returned ${statusRes.status}, retrying...`);
+      continue;
+    }
+
+    const statusData = (await statusRes.json()) as any;
+    const state = statusData.data?.state;
+
+    console.log(`[TTS] Poll ${i + 1}/${maxAttempts}: state=${state}`);
+
+    if (state === "success") {
+      let resultUrls: string[] = [];
+      try {
+        const resultJson = JSON.parse(statusData.data?.resultJson || "{}");
+        resultUrls = resultJson.resultUrls || resultJson.result_urls || [];
+        if (resultUrls.length === 0 && resultJson.url) {
+          resultUrls = [resultJson.url];
+        }
+        if (resultUrls.length === 0 && resultJson.audio_url) {
+          resultUrls = [resultJson.audio_url];
+        }
+      } catch {
+        console.log(`[TTS] Could not parse resultJson, trying raw data fields...`);
+      }
+
+      const audioUrl = resultUrls[0] ||
+                       statusData.data?.result?.audio_url ||
+                       statusData.data?.result?.url ||
+                       statusData.data?.output?.audio_url ||
+                       statusData.data?.output?.url;
+
+      if (!audioUrl || typeof audioUrl !== "string") {
+        throw new Error(`kie.ai TTS: Task succeeded but no audio URL found. Full response: ${JSON.stringify(statusData.data)}`);
+      }
+
+      console.log(`[TTS] Audio ready: ${audioUrl}`);
+
+      let downloadUrl = audioUrl;
+      try {
+        const dlRes = await fetch(`${KIE_BASE_URL}/common/download-url`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${KIE_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ url: audioUrl }),
+        });
+        if (dlRes.ok) {
+          const dlData = (await dlRes.json()) as any;
+          if (dlData.data && typeof dlData.data === "string") {
+            downloadUrl = dlData.data;
+            console.log(`[TTS] Got download URL: ${downloadUrl}`);
+          }
+        }
+      } catch {
+        console.log(`[TTS] Download URL conversion failed, using original URL`);
+      }
+
+      const audioRes = await fetch(downloadUrl);
+      if (!audioRes.ok) {
+        throw new Error(`Failed to download audio from ${downloadUrl}: ${audioRes.status}`);
+      }
+
+      const arrayBuffer = await audioRes.arrayBuffer();
+      return Buffer.from(arrayBuffer);
+    } else if (state === "fail" || state === "failed" || state === "error") {
+      const failMsg = statusData.data?.failMsg || statusData.data?.failCode || "Unknown error";
+      throw new Error(`kie.ai TTS task failed: ${failMsg}`);
+    }
+  }
+
+  throw new Error(`kie.ai TTS task timed out after ${maxAttempts * pollInterval / 1000}s (taskId: ${taskId})`);
 }
