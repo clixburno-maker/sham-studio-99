@@ -2,7 +2,17 @@ import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
 import { rm, readFile } from "fs/promises";
 
-const nativeModules: string[] = [];
+const nativeModules = [
+  "sharp",
+  "@img/sharp-linux-x64",
+  "@img/sharp-libvips-linux-x64",
+  "@img/sharp-linuxmusl-x64",
+  "@img/sharp-libvips-linuxmusl-x64",
+  "@img/sharp-wasm32",
+  "@img/sharp-libvips-dev",
+  "detect-libc",
+  "pg-native",
+];
 
 const clientOnlyPrefixes = [
   "@radix-ui/",
@@ -67,6 +77,7 @@ async function buildAll() {
   };
 
   const externals = allDeps.filter(isExcluded);
+  externals.push(...nativeModules.filter(m => !externals.includes(m)));
   console.log("externals (not bundled):", externals);
 
   await esbuild({
