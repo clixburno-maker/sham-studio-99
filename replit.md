@@ -64,10 +64,12 @@ Once a project exists, the system analyzes the script using Claude Opus 4.6, bui
 2. **Visual Beat Grouping**: Sentences grouped into visual beats by an AI film editor
 3. **Cross-Scene Continuity (CumulativeVisualMemory)**: Cumulative memory from previous scenes
 4. **Variable Image Sequence Generation**: Each visual beat gets 2-10 image prompts
-5. **Character Reference Portraits**: Reference portrait images for visual consistency
-6. **Total Visual Consistency with Identity Anchoring**: ALL element descriptions copied word-for-word into every prompt
-7. **Prompt Quality**: No word limit, 800-2,000+ words per prompt
-8. **AI-Powered Motion Prompts**: Intelligent motion prompts for video generation
+5. **Multi-Angle Character Reference Portraits**: 3 reference portraits per character (full body, face close-up, profile) for maximum visual consistency
+6. **Location Reference Images**: Auto-generated establishing shots for the top 5 most frequently recurring locations (2+ scene appearances)
+7. **Total Visual Consistency with Identity Anchoring**: ALL element descriptions copied word-for-word into every prompt
+8. **Reference Image Priority**: Scene generation receives up to 4 reference images prioritized as: face close-ups > full body > location > profiles
+9. **Prompt Quality**: No word limit, 800-2,000+ words per prompt
+10. **AI-Powered Motion Prompts**: Intelligent motion prompts for video generation
 
 ## Scene Data
 - `scene.promptBase` - JSON string array of 2-10 image prompts (variable per scene)
@@ -86,10 +88,14 @@ Once a project exists, the system analyzes the script using Claude Opus 4.6, bui
 - `POST /api/projects` - Create project (supports voiceoverUrl)
 - `POST /api/projects/:id/analyze` - Full-story AI analysis (Claude Opus 4.6)
 - `GET /api/projects/:id/analyze-progress` - Poll analysis progress
-- `GET /api/projects/:id/character-references` - Get character reference portraits
-- `POST /api/projects/:id/generate-character-references` - Generate reference portraits
+- `GET /api/projects/:id/character-references` - Get multi-angle character reference portraits (full_body, face_closeup, profile)
+- `POST /api/projects/:id/generate-character-references` - Generate 3 reference portraits per character
 - `POST /api/projects/:id/character-references/:refId/regenerate` - Regenerate a single portrait
 - `POST /api/projects/:id/character-references/poll` - Poll portrait generation status
+- `GET /api/projects/:id/location-references` - Get location reference images
+- `POST /api/projects/:id/generate-location-references` - Generate establishing shots for top recurring locations
+- `POST /api/projects/:id/location-references/:refId/regenerate` - Regenerate a location reference
+- `POST /api/projects/:id/location-references/poll` - Poll location reference generation status
 - `POST /api/projects/:id/scenes/:sceneId/generate` - Generate images for a scene
 - `POST /api/projects/:id/generate-all` - Generate images for all scenes
 - `POST /api/projects/:id/poll-images` - Poll image generation status

@@ -1532,6 +1532,13 @@ function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: S
   const [feedbackText, setFeedbackText] = useState("");
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  const [locRefs, setLocRefs] = useState<any[]>([]);
+  const [isGeneratingLocRefs, setIsGeneratingLocRefs] = useState(false);
+  const [regeneratingLocId, setRegeneratingLocId] = useState<string | null>(null);
+  const [locFeedbackRefId, setLocFeedbackRefId] = useState<string | null>(null);
+  const [locFeedbackText, setLocFeedbackText] = useState("");
+  const locPollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
   const fetchCharRefs = useCallback(async () => {
     try {
       const res = await fetch(`/api/projects/${projectId}/character-references`);
@@ -1544,9 +1551,22 @@ function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: S
     return [];
   }, [projectId]);
 
+  const fetchLocRefs = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}/location-references`);
+      if (res.ok) {
+        const data = await res.json();
+        setLocRefs(data);
+        return data;
+      }
+    } catch {}
+    return [];
+  }, [projectId]);
+
   useEffect(() => {
     fetchCharRefs();
-  }, [fetchCharRefs]);
+    fetchLocRefs();
+  }, [fetchCharRefs, fetchLocRefs]);
 
   useEffect(() => {
     const hasGenerating = charRefs.some(r => r.status === "generating");
@@ -1576,6 +1596,34 @@ function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: S
     };
   }, [charRefs, projectId]);
 
+  useEffect(() => {
+    const hasGenerating = locRefs.some(r => r.status === "generating");
+    if (hasGenerating && !locPollIntervalRef.current) {
+      locPollIntervalRef.current = setInterval(async () => {
+        try {
+          const res = await fetch(`/api/projects/${projectId}/location-references/poll`, { method: "POST" });
+          if (res.ok) {
+            const data = await res.json();
+            setLocRefs(data);
+            const stillGenerating = data.some((r: any) => r.status === "generating");
+            if (!stillGenerating && locPollIntervalRef.current) {
+              clearInterval(locPollIntervalRef.current);
+              locPollIntervalRef.current = null;
+              setIsGeneratingLocRefs(false);
+              setRegeneratingLocId(null);
+            }
+          }
+        } catch {}
+      }, 4000);
+    }
+    return () => {
+      if (locPollIntervalRef.current) {
+        clearInterval(locPollIntervalRef.current);
+        locPollIntervalRef.current = null;
+      }
+    };
+  }, [locRefs, projectId]);
+
   const generateCharacterPortraits = async () => {
     setIsGeneratingRefs(true);
     try {
@@ -1586,8 +1634,12 @@ function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: S
       });
       if (res.ok) {
         const data = await res.json();
-        setCharRefs(data.refs || []);
+        const refs = data.refs || [];
+        setCharRefs(refs);
         toast({ title: `Generating ${data.count} character portraits...` });
+        if (!refs.some((r: any) => r.status === "generating")) {
+          setIsGeneratingRefs(false);
+        }
       } else {
         const err = await res.json();
         toast({ title: "Error", description: err.error, variant: "destructive" });
@@ -1596,6 +1648,33 @@ function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: S
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
       setIsGeneratingRefs(false);
+    }
+  };
+
+  const generateLocationReferences = async () => {
+    setIsGeneratingLocRefs(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/generate-location-references`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageModel: selectedImageModel }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const refs = data.refs || [];
+        setLocRefs(refs);
+        toast({ title: `Generating ${data.count} location references...` });
+        if (!refs.some((r: any) => r.status === "generating")) {
+          setIsGeneratingLocRefs(false);
+        }
+      } else {
+        const err = await res.json();
+        toast({ title: "Error", description: err.error, variant: "destructive" });
+        setIsGeneratingLocRefs(false);
+      }
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+      setIsGeneratingLocRefs(false);
     }
   };
 
@@ -1616,8 +1695,40 @@ function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: S
     } catch {}
   };
 
+  const regenerateLocationRef = async (refId: string, feedback?: string) => {
+    setRegeneratingLocId(refId);
+    setLocFeedbackRefId(null);
+    setLocFeedbackText("");
+    try {
+      const res = await fetch(`/api/projects/${projectId}/location-references/${refId}/regenerate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ feedback: feedback || undefined, imageModel: selectedImageModel }),
+      });
+      if (res.ok) {
+        setLocRefs(prev => prev.map(r => r.id === refId ? { ...r, status: "generating", imageUrl: null } : r));
+        toast({ title: feedback ? "Applying feedback and regenerating..." : "Regenerating location reference..." });
+      }
+    } catch {}
+  };
+
   const completedRefs = charRefs.filter(r => r.status === "completed" && r.imageUrl);
   const generatingRefs = charRefs.filter(r => r.status === "generating");
+  const completedLocRefs = locRefs.filter(r => r.status === "completed" && r.imageUrl);
+  const generatingLocRefs = locRefs.filter(r => r.status === "generating");
+
+  const ANGLE_LABELS: Record<string, string> = {
+    full_body: "Full Body",
+    face_closeup: "Face Close-up",
+    profile: "Profile",
+  };
+
+  const charRefsByName = charRefs.reduce((acc: Record<string, any[]>, ref) => {
+    const name = ref.characterName || "Unknown";
+    if (!acc[name]) acc[name] = [];
+    acc[name].push(ref);
+    return acc;
+  }, {});
 
   return (
     <div className="space-y-6">
@@ -1716,7 +1827,7 @@ function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: S
               }`}
             >
               {isGeneratingRefs || generatingRefs.length > 0 ? (
-                <><Loader2 className="w-3.5 h-3.5 animate-spin" />Generating Portraits ({completedRefs.length}/{analysis.characters.length})</>
+                <><Loader2 className="w-3.5 h-3.5 animate-spin" />Generating Portraits ({completedRefs.length}/{charRefs.length})</>
               ) : completedRefs.length > 0 ? (
                 <><RefreshCw className="w-3.5 h-3.5" />Regenerate All Portraits</>
               ) : (
@@ -1726,50 +1837,17 @@ function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: S
           </div>
           {completedRefs.length > 0 && (
             <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
-              These portraits are used as visual references when generating scene images to keep characters looking consistent.
+              These portraits are used as visual references when generating scene images to keep characters looking consistent. Each character has multiple angles for better consistency.
             </p>
           )}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3">
             {analysis.characters.map((char, i) => {
-              const ref = charRefs.find(r => r.characterName === char.name);
+              const refsForChar = charRefsByName[char.name] || [];
+              const angleOrder = ["full_body", "face_closeup", "profile"];
+              const sortedRefs = [...refsForChar].sort((a, b) => angleOrder.indexOf(a.angleType || "full_body") - angleOrder.indexOf(b.angleType || "full_body"));
               return (
                 <Card key={i} className="glass-card p-4 rounded-2xl">
-                  <div className="flex gap-3">
-                    {ref && ref.status === "completed" && ref.imageUrl ? (
-                      <div className="relative flex-shrink-0 group">
-                        <img
-                          src={proxyUrl(ref.imageUrl)}
-                          alt={char.name}
-                          className="w-24 h-24 object-cover rounded-xl border border-[var(--glass-border)] shadow-md ring-1 ring-white/[0.04]"
-                        />
-                        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center gap-1.5">
-                          <button
-                            onClick={() => regeneratePortrait(ref.id)}
-                            className="p-1.5 bg-white/15 hover:bg-white/25 rounded-lg transition-colors backdrop-blur-sm"
-                            disabled={regeneratingId === ref.id}
-                            title="Regenerate"
-                          >
-                            <RefreshCw className="w-4 h-4 text-white" />
-                          </button>
-                          <button
-                            onClick={() => { setFeedbackRefId(ref.id); setFeedbackText(""); }}
-                            className="p-1.5 bg-white/15 hover:bg-white/25 rounded-lg transition-colors backdrop-blur-sm"
-                            disabled={regeneratingId === ref.id}
-                            title="Redo with feedback"
-                          >
-                            <MessageSquare className="w-4 h-4 text-white" />
-                          </button>
-                        </div>
-                      </div>
-                    ) : ref && ref.status === "generating" ? (
-                      <div className="w-24 h-24 flex-shrink-0 rounded-xl border border-[var(--glass-border)] glass-surface flex items-center justify-center">
-                        <Loader2 className="w-6 h-6 text-muted-foreground animate-spin" />
-                      </div>
-                    ) : ref && ref.status === "failed" ? (
-                      <div className="w-24 h-24 flex-shrink-0 rounded-xl border border-red-500/20 bg-red-950/10 flex items-center justify-center cursor-pointer hover:border-red-500/40 transition-colors" onClick={() => regeneratePortrait(ref.id)}>
-                        <RefreshCw className="w-5 h-5 text-red-400" />
-                      </div>
-                    ) : null}
+                  <div className="flex flex-col gap-3">
                     <div className="flex-1 min-w-0">
                       <h4 className="font-semibold text-sm" data-testid={`text-character-name-${i}`}>{char.name}</h4>
                       <p className="text-xs text-muted-foreground mb-1">{char.role}</p>
@@ -1777,33 +1855,77 @@ function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: S
                       <p className="text-[11px] text-muted-foreground mt-1 line-clamp-2 leading-relaxed">
                         <span className="font-medium">Appearance:</span> {char.appearance}
                       </p>
-                      {feedbackRefId === ref?.id && (
-                        <div className="mt-2 space-y-2">
-                          <textarea
-                            value={feedbackText}
-                            onChange={(e) => setFeedbackText(e.target.value)}
-                            placeholder="Describe what you'd like changed... e.g. 'make him look more weathered and battle-worn' or 'skin should look more like Unreal Engine render, less photographic'"
-                            className="glass-input w-full h-20 text-xs rounded-xl px-3 py-2 resize-none focus:outline-none"
-                            autoFocus
-                          />
-                          <div className="flex gap-2">
-                            <button
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold gradient-btn text-white border-0 transition-all duration-200 active:scale-[0.98] disabled:opacity-50"
-                              onClick={() => regeneratePortrait(ref!.id, feedbackText)}
-                              disabled={!feedbackText.trim()}
-                            >
-                              <Send className="w-3 h-3" />Apply & Regenerate
-                            </button>
-                            <button
-                              className="px-3 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground transition-colors"
-                              onClick={() => { setFeedbackRefId(null); setFeedbackText(""); }}
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      )}
                     </div>
+                    {sortedRefs.length > 0 && (
+                      <div className="flex flex-wrap gap-3">
+                        {sortedRefs.map((ref) => (
+                          <div key={ref.id} className="flex flex-col items-center gap-1">
+                            {ref.status === "completed" && ref.imageUrl ? (
+                              <div className="relative flex-shrink-0 group">
+                                <img
+                                  src={proxyUrl(ref.imageUrl)}
+                                  alt={`${char.name} - ${ANGLE_LABELS[ref.angleType] || ref.angleType}`}
+                                  className="w-24 h-24 object-cover rounded-xl border border-[var(--glass-border)] shadow-md ring-1 ring-white/[0.04]"
+                                />
+                                <div className="absolute inset-0 bg-black/60 backdrop-blur-sm rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center gap-1.5">
+                                  <button
+                                    onClick={() => regeneratePortrait(ref.id)}
+                                    className="p-1.5 bg-white/15 hover:bg-white/25 rounded-lg transition-colors backdrop-blur-sm"
+                                    disabled={regeneratingId === ref.id}
+                                    title="Regenerate"
+                                  >
+                                    <RefreshCw className="w-4 h-4 text-white" />
+                                  </button>
+                                  <button
+                                    onClick={() => { setFeedbackRefId(ref.id); setFeedbackText(""); }}
+                                    className="p-1.5 bg-white/15 hover:bg-white/25 rounded-lg transition-colors backdrop-blur-sm"
+                                    disabled={regeneratingId === ref.id}
+                                    title="Redo with feedback"
+                                  >
+                                    <MessageSquare className="w-4 h-4 text-white" />
+                                  </button>
+                                </div>
+                              </div>
+                            ) : ref.status === "generating" ? (
+                              <div className="w-24 h-24 flex-shrink-0 rounded-xl border border-[var(--glass-border)] glass-surface flex items-center justify-center">
+                                <Loader2 className="w-6 h-6 text-muted-foreground animate-spin" />
+                              </div>
+                            ) : ref.status === "failed" ? (
+                              <div className="w-24 h-24 flex-shrink-0 rounded-xl border border-red-500/20 bg-red-950/10 flex items-center justify-center cursor-pointer hover:border-red-500/40 transition-colors" onClick={() => regeneratePortrait(ref.id)}>
+                                <RefreshCw className="w-5 h-5 text-red-400" />
+                              </div>
+                            ) : null}
+                            <span className="text-[10px] text-muted-foreground">{ANGLE_LABELS[ref.angleType] || ref.angleType || "Full Body"}</span>
+                            {feedbackRefId === ref.id && (
+                              <div className="mt-1 space-y-2 w-full min-w-[200px]">
+                                <textarea
+                                  value={feedbackText}
+                                  onChange={(e) => setFeedbackText(e.target.value)}
+                                  placeholder="Describe what you'd like changed..."
+                                  className="glass-input w-full h-16 text-xs rounded-xl px-3 py-2 resize-none focus:outline-none"
+                                  autoFocus
+                                />
+                                <div className="flex gap-2">
+                                  <button
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold gradient-btn text-white border-0 transition-all duration-200 active:scale-[0.98] disabled:opacity-50"
+                                    onClick={() => regeneratePortrait(ref.id, feedbackText)}
+                                    disabled={!feedbackText.trim()}
+                                  >
+                                    <Send className="w-3 h-3" />Apply
+                                  </button>
+                                  <button
+                                    className="px-3 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground transition-colors"
+                                    onClick={() => { setFeedbackRefId(null); setFeedbackText(""); }}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </Card>
               );
@@ -1845,30 +1967,119 @@ function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: S
 
       {analysis.locations.length > 0 && (
         <div>
-          <h3 className="section-title mb-3">
-            <div className="icon-box bg-gradient-to-br from-amber-500/10 to-yellow-500/5 ring-amber-500/15 w-6 h-6 rounded-lg">
-              <MapPin className="w-3.5 h-3.5 text-amber-400" />
-            </div>
-            Locations ({analysis.locations.length})
-          </h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="section-title">
+              <div className="icon-box bg-gradient-to-br from-amber-500/10 to-yellow-500/5 ring-amber-500/15 w-6 h-6 rounded-lg">
+                <MapPin className="w-3.5 h-3.5 text-amber-400" />
+              </div>
+              Locations ({analysis.locations.length})
+            </h3>
+            <button
+              onClick={generateLocationReferences}
+              disabled={isGeneratingLocRefs || generatingLocRefs.length > 0}
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all duration-300 active:scale-[0.98] disabled:opacity-50 ${
+                completedLocRefs.length > 0
+                  ? "ghost-btn"
+                  : "gradient-btn text-white border-0 glow-sm hover:glow-md"
+              }`}
+            >
+              {isGeneratingLocRefs || generatingLocRefs.length > 0 ? (
+                <><Loader2 className="w-3.5 h-3.5 animate-spin" />Generating References ({completedLocRefs.length}/{locRefs.length})</>
+              ) : completedLocRefs.length > 0 ? (
+                <><RefreshCw className="w-3.5 h-3.5" />Regenerate Location References</>
+              ) : (
+                <><Camera className="w-3.5 h-3.5" />Generate Location References</>
+              )}
+            </button>
+          </div>
+          {completedLocRefs.length > 0 && (
+            <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
+              These establishing shots are used as visual references when generating scene images to keep locations looking consistent.
+            </p>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {analysis.locations.map((loc, i) => (
-              <Card key={i} className="glass-card p-4 rounded-2xl hover:border-amber-500/15 transition-colors">
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <MapPin className="w-4 h-4 text-amber-400" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-semibold text-sm" data-testid={`text-location-name-${i}`}>{loc.name}</h4>
-                    <p className="text-xs text-muted-foreground leading-relaxed mt-1">{loc.description}</p>
-                    <div className="mt-2 pt-2 border-t border-white/5">
-                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Visual Details</p>
-                      <p className="text-[11px] leading-relaxed">{loc.visualDetails}</p>
+            {analysis.locations.map((loc, i) => {
+              const locRef = locRefs.find(r => r.locationName.toLowerCase().trim() === loc.name.toLowerCase().trim());
+              return (
+                <Card key={i} className="glass-card p-4 rounded-2xl hover:border-amber-500/15 transition-colors">
+                  <div className="flex gap-3">
+                    {locRef && locRef.status === "completed" && locRef.imageUrl ? (
+                      <div className="relative flex-shrink-0 group">
+                        <img
+                          src={proxyUrl(locRef.imageUrl)}
+                          alt={loc.name}
+                          className="w-24 h-24 object-cover rounded-xl border border-[var(--glass-border)] shadow-md ring-1 ring-white/[0.04]"
+                        />
+                        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => regenerateLocationRef(locRef.id)}
+                            className="p-1.5 bg-white/15 hover:bg-white/25 rounded-lg transition-colors backdrop-blur-sm"
+                            disabled={regeneratingLocId === locRef.id}
+                            title="Regenerate"
+                          >
+                            <RefreshCw className="w-4 h-4 text-white" />
+                          </button>
+                          <button
+                            onClick={() => { setLocFeedbackRefId(locRef.id); setLocFeedbackText(""); }}
+                            className="p-1.5 bg-white/15 hover:bg-white/25 rounded-lg transition-colors backdrop-blur-sm"
+                            disabled={regeneratingLocId === locRef.id}
+                            title="Redo with feedback"
+                          >
+                            <MessageSquare className="w-4 h-4 text-white" />
+                          </button>
+                        </div>
+                      </div>
+                    ) : locRef && locRef.status === "generating" ? (
+                      <div className="w-24 h-24 flex-shrink-0 rounded-xl border border-[var(--glass-border)] glass-surface flex items-center justify-center">
+                        <Loader2 className="w-6 h-6 text-muted-foreground animate-spin" />
+                      </div>
+                    ) : locRef && locRef.status === "failed" ? (
+                      <div className="w-24 h-24 flex-shrink-0 rounded-xl border border-red-500/20 bg-red-950/10 flex items-center justify-center cursor-pointer hover:border-red-500/40 transition-colors" onClick={() => regenerateLocationRef(locRef.id)}>
+                        <RefreshCw className="w-5 h-5 text-red-400" />
+                      </div>
+                    ) : (
+                      <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <MapPin className="w-4 h-4 text-amber-400" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-semibold text-sm" data-testid={`text-location-name-${i}`}>{loc.name}</h4>
+                      <p className="text-xs text-muted-foreground leading-relaxed mt-1">{loc.description}</p>
+                      <div className="mt-2 pt-2 border-t border-white/5">
+                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Visual Details</p>
+                        <p className="text-[11px] leading-relaxed">{loc.visualDetails}</p>
+                      </div>
+                      {locFeedbackRefId === locRef?.id && (
+                        <div className="mt-2 space-y-2">
+                          <textarea
+                            value={locFeedbackText}
+                            onChange={(e) => setLocFeedbackText(e.target.value)}
+                            placeholder="Describe what you'd like changed... e.g. 'make it more foggy and dramatic' or 'add more detail to the architecture'"
+                            className="glass-input w-full h-20 text-xs rounded-xl px-3 py-2 resize-none focus:outline-none"
+                            autoFocus
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold gradient-btn text-white border-0 transition-all duration-200 active:scale-[0.98] disabled:opacity-50"
+                              onClick={() => regenerateLocationRef(locRef!.id, locFeedbackText)}
+                              disabled={!locFeedbackText.trim()}
+                            >
+                              <Send className="w-3 h-3" />Apply & Regenerate
+                            </button>
+                            <button
+                              className="px-3 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground transition-colors"
+                              onClick={() => { setLocFeedbackRefId(null); setLocFeedbackText(""); }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
-                </div>
-              </Card>
-            ))}
+                </Card>
+              );
+            })}
           </div>
         </div>
       )}
