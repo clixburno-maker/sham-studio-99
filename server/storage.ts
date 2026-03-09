@@ -9,7 +9,8 @@ import {
   type NicheVideo, type InsertNicheVideo,
   type SavedScript, type InsertSavedScript,
   type CustomVoice, type InsertCustomVoice,
-  users, projects, scenes, generatedImages, characterReferences, locationReferences, niches, nicheVideos, savedScripts, customVoices,
+  type ApiSetting, type InsertApiSetting,
+  users, projects, scenes, generatedImages, characterReferences, locationReferences, niches, nicheVideos, savedScripts, customVoices, apiSettings,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
@@ -72,6 +73,11 @@ export interface IStorage {
   getCustomVoices(): Promise<CustomVoice[]>;
   createCustomVoice(voice: InsertCustomVoice): Promise<CustomVoice>;
   deleteCustomVoice(id: string): Promise<void>;
+
+  getAllApiSettings(): Promise<ApiSetting[]>;
+  getApiSetting(serviceName: string): Promise<ApiSetting | undefined>;
+  upsertApiSetting(serviceName: string, apiKey: string): Promise<ApiSetting>;
+  deleteApiSetting(serviceName: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -298,6 +304,34 @@ export class DatabaseStorage implements IStorage {
 
   async deleteCustomVoice(id: string): Promise<void> {
     await db.delete(customVoices).where(eq(customVoices.id, id));
+  }
+
+  async getAllApiSettings(): Promise<ApiSetting[]> {
+    return db.select().from(apiSettings);
+  }
+
+  async getApiSetting(serviceName: string): Promise<ApiSetting | undefined> {
+    const [setting] = await db.select().from(apiSettings).where(eq(apiSettings.serviceName, serviceName));
+    return setting;
+  }
+
+  async upsertApiSetting(serviceName: string, apiKey: string): Promise<ApiSetting> {
+    const existing = await this.getApiSetting(serviceName);
+    if (existing) {
+      const [updated] = await db.update(apiSettings)
+        .set({ apiKey, updatedAt: new Date().toISOString() })
+        .where(eq(apiSettings.serviceName, serviceName))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(apiSettings)
+      .values({ serviceName, apiKey })
+      .returning();
+    return created;
+  }
+
+  async deleteApiSetting(serviceName: string): Promise<void> {
+    await db.delete(apiSettings).where(eq(apiSettings.serviceName, serviceName));
   }
 }
 

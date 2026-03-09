@@ -9,6 +9,7 @@ import { streamExportPDF } from "./pdf-export";
 import archiver from "archiver";
 import { Readable } from "stream";
 import Anthropic from "@anthropic-ai/sdk";
+import { getApiKey, clearKeyCache } from "./api-keys";
 import { generateVoiceover, getVoices } from "./elevenlabs";
 import * as fs from "fs";
 import * as path from "path";
@@ -309,7 +310,8 @@ export async function registerRoutes(
 
           advanceAnalysisStep(1, `Feeding ${usedVideos.length} scripts to AI for tone & pacing analysis...`);
 
-          const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+          const anthropicKey = await getApiKey("anthropic");
+          const anthropic = new Anthropic({ apiKey: anthropicKey });
 
           const stylePromptContent = `You are a writing style analyst. Analyze these YouTube video transcripts from the same creator/channel and extract a detailed writing style profile. These are all from the channel "${niche.channelName}".
 
@@ -553,7 +555,8 @@ You MUST match this writing style exactly. Mimic the tone, sentence rhythm, voca
 
       const maxTokens = Math.max(8192, Math.min(Math.round(wordMax * 2), 32000));
 
-      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const anthropicKey2 = await getApiKey("anthropic");
+      const anthropic = new Anthropic({ apiKey: anthropicKey2 });
 
       const message = await anthropic.messages.create({
         model: "claude-opus-4-6",
@@ -2480,6 +2483,157 @@ Write the script now. Output ONLY the script text, nothing else.`,
   app.get("/api/image-models", (_req, res) => {
     res.json(Object.values(IMAGE_MODELS));
   });
+
+  app.get("/api/settings/api-keys", async (_req, res) => {
+    try {
+      const settings = await storage.getAllApiSettings();
+      const masked = settings.map(s => ({
+        serviceName: s.serviceName,
+        hasKey: true,
+        maskedKey: s.apiKey.length > 8
+          ? s.apiKey.slice(0, 4) + "•".repeat(Math.min(s.apiKey.length - 8, 20)) + s.apiKey.slice(-4)
+          : "••••••••",
+        updatedAt: s.updatedAt,
+      }));
+
+      const allServices = ["anthropic", "evolink", "elevenlabs"];
+      const result = allServices.map(name => {
+        const existing = masked.find(m => m.serviceName === name);
+        if (existing) return existing;
+        const envMap: Record<string, string | undefined> = {
+          anthropic: process.env.ANTHROPIC_API_KEY,
+          evolink: process.env.NANOBANANA_API_KEY,
+          elevenlabs: process.env.ELEVENLABS_API_KEY,
+        };
+        const envKey = envMap[name];
+        return {
+          serviceName: name,
+          hasKey: !!envKey,
+          maskedKey: envKey
+            ? envKey.slice(0, 4) + "•".repeat(Math.min(envKey.length - 8, 20)) + envKey.slice(-4)
+            : null,
+          updatedAt: null,
+          source: "environment",
+        };
+      });
+
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/settings/api-keys", async (req, res) => {
+    try {
+      const { serviceName, apiKey } = req.body;
+      if (!serviceName || !apiKey) {
+        return res.status(400).json({ error: "serviceName and apiKey are required" });
+      }
+
+      const validServices = ["anthropic", "evolink", "elevenlabs"];
+      if (!validServices.includes(serviceName)) {
+        return res.status(400).json({ error: `Invalid service. Must be one of: ${validServices.join(", ")}` });
+      }
+
+      await storage.upsertApiSetting(serviceName, apiKey.trim());
+      clearKeyCache(serviceName);
+
+      res.json({ success: true, serviceName });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/settings/api-keys/:serviceName", async (req, res) => {
+    try {
+      const { serviceName } = req.params;
+      await storage.deleteApiSetting(serviceName);
+      clearKeyCache(serviceName);
+      res.json({ success: true, serviceName });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/settings/api-keys/test", async (req, res) => {
+    try {
+      const { serviceName, apiKey } = req.body;
+      if (!serviceName || !apiKey) {
+        return res.status(400).json({ error: "serviceName and apiKey are required" });
+      }
+
+      let valid = false;
+      let message = "";
+
+      if (serviceName === "anthropic") {
+        try {
+          const client = new Anthropic({ apiKey: apiKey.trim() });
+          await client.messages.create({
+            model: "claude-sonnet-4-20250514",
+            max_tokens: 10,
+            messages: [{ role: "user", content: "Say OK" }],
+          });
+          valid = true;
+          message = "Anthropic API key is valid";
+        } catch (err: any) {
+          message = err.message || "Invalid Anthropic API key";
+        }
+      } else if (serviceName === "evolink") {
+        try {
+          const testRes = await fetch(`${API_BASE_URL}/images/generations`, {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${apiKey.trim()}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "nanobanana",
+              prompt: "test",
+              size: "1:1",
+              quality: "standard",
+            }),
+          });
+          if (testRes.status === 401 || testRes.status === 403) {
+            message = "Invalid EvoLink API key";
+          } else if (testRes.ok || testRes.status === 200 || testRes.status === 201) {
+            valid = true;
+            message = "EvoLink API key is valid";
+          } else {
+            const errData = await testRes.json().catch(() => ({}));
+            const errCode = errData?.error?.code || "";
+            if (errCode === "invalid_api_key") {
+              message = "Invalid EvoLink API key";
+            } else {
+              valid = true;
+              message = "EvoLink API key accepted (connection successful)";
+            }
+          }
+        } catch (err: any) {
+          message = err.message || "Could not verify EvoLink API key";
+        }
+      } else if (serviceName === "elevenlabs") {
+        try {
+          const testRes = await fetch("https://api.elevenlabs.io/v1/user", {
+            headers: { "xi-api-key": apiKey.trim() },
+          });
+          if (testRes.ok) {
+            valid = true;
+            message = "ElevenLabs API key is valid";
+          } else {
+            message = "Invalid ElevenLabs API key";
+          }
+        } catch (err: any) {
+          message = err.message || "Could not verify ElevenLabs API key";
+        }
+      }
+
+      res.json({ valid, message });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  const API_BASE_URL = "https://api.evolink.ai/v1";
 
   app.post("/api/projects/:id/animate-all-videos", async (req, res) => {
     try {

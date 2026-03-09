@@ -46,11 +46,13 @@ Once a project exists, the system analyzes the script using Claude Opus 4.6, bui
 - `server/script-analyzer.ts` - Legacy script analysis engine (character/jet/location extraction via regex)
 - `server/nanobanana.ts` - Image generation API integration (NanoBanana Pro + SeedREAM 4.5) and video generation
 - `server/elevenlabs.ts` - ElevenLabs TTS integration (voice listing + voiceover generation)
+- `server/api-keys.ts` - Dynamic API key resolver (custom DB keys override env vars, with 30s cache)
 - `server/storage.ts` - Database CRUD operations
 - `client/src/pages/dashboard.tsx` - Project listing with AI Script Writer card
 - `client/src/pages/write-script.tsx` - AI Script Writer flow (topic → review → voiceover → create project)
 - `client/src/pages/new-project.tsx` - Direct script input
 - `client/src/pages/project-view.tsx` - Story Bible, Storyboard timeline, Gallery views, Lightbox with arrow navigation
+- `client/src/pages/settings.tsx` - API Settings page for managing custom API keys
 
 ## AI Script Writer Flow
 1. **Topic Input**: User enters topic description + selects script length (short/medium/long/epic)
@@ -111,6 +113,15 @@ Once a project exists, the system analyzes the script using Claude Opus 4.6, bui
 - `GET /api/projects/:id/download-clips` - Download all video clips as ZIP
 - `GET /api/niches/:id/videos` - Get stored video transcripts for a niche
 - `POST /api/niches/:id/retrain` - Re-train a niche (re-extract transcripts + re-analyze style)
+
+## API Settings
+- Custom API keys can be set via the in-app Settings page (`/settings`)
+- Custom keys are stored in `api_settings` table and override environment variables
+- Key resolver in `server/api-keys.ts` checks: custom DB key first → env var fallback
+- 30-second cache to avoid repeated DB lookups per request
+- Services: `anthropic` (Claude), `evolink` (EvoLink.AI images/video), `elevenlabs` (TTS)
+- Keys are never returned in full via the API — only masked versions (first 4 + last 4 chars)
+- Test endpoint validates keys against each service's API before saving
 
 ## Secrets
 - `ANTHROPIC_API_KEY` - API key from Anthropic for Claude analysis and script writing

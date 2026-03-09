@@ -210,6 +210,17 @@ export const insertCustomVoiceSchema = createInsertSchema(customVoices).omit({ i
 export type InsertCustomVoice = z.infer<typeof insertCustomVoiceSchema>;
 export type CustomVoice = typeof customVoices.$inferSelect;
 
+export const apiSettings = pgTable("api_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  serviceName: text("service_name").notNull().unique(),
+  apiKey: text("api_key").notNull(),
+  updatedAt: text("updated_at").default(sql`now()::text`),
+});
+
+export const insertApiSettingSchema = createInsertSchema(apiSettings).omit({ id: true, updatedAt: true });
+export type InsertApiSetting = z.infer<typeof insertApiSettingSchema>;
+export type ApiSetting = typeof apiSettings.$inferSelect;
+
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   username: text("username").notNull().unique(),
