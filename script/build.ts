@@ -2,39 +2,47 @@ import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
 import { rm, readFile } from "fs/promises";
 
-// server deps to bundle to reduce openat(2) syscalls
-// which helps cold start times
-const allowlist = [
-  "@anthropic-ai/sdk",
-  "@google/generative-ai",
-  "archiver",
-  "axios",
-  "connect-pg-simple",
-  "cors",
-  "date-fns",
-  "drizzle-orm",
-  "drizzle-zod",
-  "express",
-  "express-rate-limit",
-  "express-session",
-  "jsonwebtoken",
-  "memorystore",
-  "multer",
-  "nanoid",
-  "nodemailer",
-  "openai",
-  "p-limit",
-  "p-retry",
-  "passport",
-  "passport-local",
-  "pdfkit",
-  "pg",
-  "stripe",
-  "uuid",
-  "ws",
-  "xlsx",
-  "zod",
-  "zod-validation-error",
+const nativeModules: string[] = [];
+
+const clientOnlyPrefixes = [
+  "@radix-ui/",
+  "@hookform/",
+  "@tanstack/",
+  "react",
+  "react-dom",
+  "wouter",
+  "lucide-react",
+  "framer-motion",
+  "class-variance-authority",
+  "clsx",
+  "cmdk",
+  "embla-carousel",
+  "input-otp",
+  "next-themes",
+  "react-day-picker",
+  "react-hook-form",
+  "react-icons",
+  "react-resizable-panels",
+  "recharts",
+  "tailwind-merge",
+  "tailwindcss-animate",
+  "tw-animate-css",
+  "vaul",
+];
+
+const devOnly = [
+  "@replit/",
+  "@tailwindcss/",
+  "@types/",
+  "@vitejs/",
+  "autoprefixer",
+  "drizzle-kit",
+  "esbuild",
+  "postcss",
+  "tailwindcss",
+  "tsx",
+  "typescript",
+  "vite",
 ];
 
 async function buildAll() {
@@ -49,7 +57,17 @@ async function buildAll() {
     ...Object.keys(pkg.dependencies || {}),
     ...Object.keys(pkg.devDependencies || {}),
   ];
-  const externals = allDeps.filter((dep) => !allowlist.includes(dep));
+
+  const isExcluded = (dep: string) => {
+    if (nativeModules.includes(dep)) return true;
+    for (const prefix of [...clientOnlyPrefixes, ...devOnly]) {
+      if (dep.startsWith(prefix)) return true;
+    }
+    return false;
+  };
+
+  const externals = allDeps.filter(isExcluded);
+  console.log("externals (not bundled):", externals);
 
   await esbuild({
     entryPoints: ["server/index.ts"],

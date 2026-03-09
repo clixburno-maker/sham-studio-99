@@ -1,9 +1,21 @@
 import * as fs from "fs";
 import * as path from "path";
 import { randomUUID } from "crypto";
-import sharp from "sharp";
 
 import { getApiKey } from "./api-keys";
+
+let _sharp: typeof import("sharp") | null = null;
+async function getSharp() {
+  if (!_sharp) {
+    try {
+      _sharp = (await import("sharp")).default as any;
+    } catch {
+      console.warn("[sharp] Not available - image compression disabled");
+      _sharp = null;
+    }
+  }
+  return _sharp;
+}
 
 const API_BASE = "https://api.evolink.ai/v1";
 
@@ -311,12 +323,17 @@ export async function generateVideoLTX(imageUrl: string, prompt: string, duratio
       console.log(`[video-gen-ltx] Image downloaded: ${originalSizeMB.toFixed(1)}MB (${imgContentType})`);
 
       if (imgBuffer.length > 4 * 1024 * 1024) {
-        console.log(`[video-gen-ltx] Compressing image from ${originalSizeMB.toFixed(1)}MB to JPEG for LTX...`);
-        imgBuffer = await sharp(imgBuffer)
-          .resize(1920, 1080, { fit: "inside", withoutEnlargement: true })
-          .jpeg({ quality: 85 })
-          .toBuffer();
-        console.log(`[video-gen-ltx] Compressed to ${(imgBuffer.length / 1024 / 1024).toFixed(1)}MB JPEG`);
+        const sharpInstance = await getSharp();
+        if (sharpInstance) {
+          console.log(`[video-gen-ltx] Compressing image from ${originalSizeMB.toFixed(1)}MB to JPEG for LTX...`);
+          imgBuffer = await (sharpInstance as any)(imgBuffer)
+            .resize(1920, 1080, { fit: "inside", withoutEnlargement: true })
+            .jpeg({ quality: 85 })
+            .toBuffer();
+          console.log(`[video-gen-ltx] Compressed to ${(imgBuffer.length / 1024 / 1024).toFixed(1)}MB JPEG`);
+        } else {
+          console.warn(`[video-gen-ltx] sharp not available, skipping compression`);
+        }
       }
 
       const wasCompressed = imgBuffer.length < (originalSizeMB * 1024 * 1024);
