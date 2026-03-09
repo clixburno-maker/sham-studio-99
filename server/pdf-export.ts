@@ -4,18 +4,6 @@ import type { Project, Scene, GeneratedImage } from "@shared/schema";
 import https from "https";
 import http from "http";
 
-let _sharp: any = null;
-async function getSharp() {
-  if (_sharp === null) {
-    try {
-      _sharp = (await import("sharp")).default;
-    } catch {
-      _sharp = false;
-    }
-  }
-  return _sharp || null;
-}
-
 interface ExportOptions {
   includeImages: boolean;
   includeClips: boolean;
@@ -53,18 +41,7 @@ const PDF_IMAGE_MAX_WIDTH = 1200;
 const PDF_JPEG_QUALITY = 85;
 
 async function optimizeForPdf(buffer: Buffer): Promise<Buffer> {
-  try {
-    const sharpFn = await getSharp();
-    if (!sharpFn) return buffer;
-    const metadata = await sharpFn(buffer).metadata();
-    let pipeline = sharpFn(buffer);
-    if (metadata.width && metadata.width > PDF_IMAGE_MAX_WIDTH) {
-      pipeline = pipeline.resize({ width: PDF_IMAGE_MAX_WIDTH, withoutEnlargement: true });
-    }
-    return await pipeline.jpeg({ quality: PDF_JPEG_QUALITY, mozjpeg: true }).toBuffer();
-  } catch {
-    return buffer;
-  }
+  return buffer;
 }
 
 async function prefetchImages(images: GeneratedImage[]): Promise<Map<string, Buffer>> {
