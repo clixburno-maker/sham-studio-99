@@ -127,6 +127,7 @@ export const characterReferences = pgTable("character_references", {
   imageUrl: text("image_url"),
   status: text("status").notNull().default("pending"),
   taskId: text("task_id"),
+  angle: text("angle").notNull().default("front"),
 });
 
 export const insertCharacterReferenceSchema = createInsertSchema(characterReferences).omit({ id: true });

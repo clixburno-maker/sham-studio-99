@@ -97,7 +97,7 @@ interface EvolinkTaskResponse {
   };
 }
 
-export type ImageModelId = "nanobanana" | "seedream";
+export type ImageModelId = "nanobanana";
 
 export interface ImageModelConfig {
   id: ImageModelId;
@@ -120,16 +120,6 @@ export const IMAGE_MODELS: Record<ImageModelId, ImageModelConfig> = {
     costPerImage: 0.05,
     description: "Gemini-powered 4K photorealistic images — proven quality",
     maxRefImages: 3,
-  },
-  seedream: {
-    id: "seedream",
-    name: "SeedREAM 4.5",
-    apiModel: "doubao-seedream-4.5",
-    quality: "4K",
-    resolution: "4K",
-    costPerImage: 0.04,
-    description: "ByteDance — superior character consistency, up to 10 reference images",
-    maxRefImages: 10,
   },
 };
 

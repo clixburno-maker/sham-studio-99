@@ -16,7 +16,8 @@ import {
   Crosshair, Sun, CloudSun, Film, ChevronRight, ArrowRight,
   ChevronLeft, X, RotateCcw, Video, FileDown, ImageIcon, Film as FilmIcon, Layers,
   DollarSign, FileText, ChevronDown, MessageSquare, Send, Volume2, Mic,
-  CheckSquare, Square, Zap, AlertTriangle, Pencil, Crown, Star, ChevronUp, Settings2, BookOpen
+  CheckSquare, Square, Zap, AlertTriangle, Pencil, Crown, Star, ChevronUp, Settings2, BookOpen,
+  Maximize, Users
 } from "lucide-react";
 import type { Project, Scene, GeneratedImage, ScriptAnalysis } from "@shared/schema";
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -64,7 +65,6 @@ interface ImageModel {
 }
 
 const IMAGE_MODELS: ImageModel[] = [
-  { id: "seedream", name: "SeedREAM 4.5", apiModel: "doubao-seedream-4.5", quality: "4K", resolution: "4K", costPerImage: 0.04, description: "ByteDance — superior character consistency, up to 10 ref images", maxRefImages: 10, tier: "budget" },
   { id: "nanobanana", name: "NanoBanana Pro", apiModel: "gemini-3-pro-image-preview", quality: "4K", resolution: "4K", costPerImage: 0.05, description: "Gemini-powered 4K photorealistic images — proven quality", maxRefImages: 3, tier: "mid" },
 ];
 
@@ -400,6 +400,40 @@ export default function ProjectView() {
       });
     } catch (err: any) {
       toast({ title: "Scene regeneration failed", description: err.message, variant: "destructive" });
+    } finally {
+      setRegeneratingSceneId(null);
+    }
+  }, [id, toast, selectedImageModel]);
+
+  const regenerateImageWithConsistency = useCallback(async (imageId: string) => {
+    if (!id) return;
+    setRegeneratingImageId(imageId);
+    try {
+      await apiRequest("POST", `/api/projects/${id}/images/${imageId}/regenerate-with-consistency`, { imageModel: selectedImageModel });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "images"] });
+      toast({
+        title: "Regenerating with character consistency",
+        description: "Using character reference portraits for consistent look...",
+      });
+    } catch (err: any) {
+      toast({ title: "Consistency regeneration failed", description: err.message, variant: "destructive" });
+    } finally {
+      setRegeneratingImageId(null);
+    }
+  }, [id, toast, selectedImageModel]);
+
+  const regenerateSceneWithConsistency = useCallback(async (sceneId: string) => {
+    if (!id) return;
+    setRegeneratingSceneId(sceneId);
+    try {
+      await apiRequest("POST", `/api/projects/${id}/scenes/${sceneId}/regenerate-with-consistency`, { imageModel: selectedImageModel });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "images"] });
+      toast({
+        title: "Regenerating entire scene with character consistency",
+        description: "All images in this scene will use character reference portraits...",
+      });
+    } catch (err: any) {
+      toast({ title: "Scene consistency regeneration failed", description: err.message, variant: "destructive" });
     } finally {
       setRegeneratingSceneId(null);
     }
@@ -1469,6 +1503,8 @@ export default function ProjectView() {
                   costPerImage={currentImageModel.costPerImage}
                   onRegenerateSceneWithFeedback={regenerateSceneWithFeedback}
                   regeneratingSceneId={regeneratingSceneId}
+                  onRegenerateImageWithConsistency={regenerateImageWithConsistency}
+                  onRegenerateSceneWithConsistency={regenerateSceneWithConsistency}
                 />
               </>
             ) : isAnalyzing ? (
@@ -1523,6 +1559,35 @@ export default function ProjectView() {
   );
 }
 
+function PortraitLightbox({ imageUrl, characterName, angle, onClose }: { imageUrl: string; characterName: string; angle: string; onClose: () => void }) {
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [onClose]);
+
+  const angleLabels: Record<string, string> = { front: "Front View", "three-quarter": "Three-Quarter View", profile: "Side Profile" };
+
+  return (
+    <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-md flex items-center justify-center p-4" onClick={onClose}>
+      <div className="relative max-w-5xl max-h-[90vh] w-full" onClick={e => e.stopPropagation()}>
+        <button onClick={onClose} className="absolute -top-10 right-0 text-white/70 hover:text-white transition-colors p-1">
+          <X className="w-6 h-6" />
+        </button>
+        <div className="text-center mb-3">
+          <h3 className="text-white text-lg font-semibold">{characterName}</h3>
+          <p className="text-white/50 text-sm">{angleLabels[angle] || angle}</p>
+        </div>
+        <img
+          src={proxyUrl(imageUrl)}
+          alt={`${characterName} - ${angle}`}
+          className="w-full h-auto max-h-[80vh] object-contain rounded-xl"
+        />
+      </div>
+    </div>
+  );
+}
+
 function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: ScriptAnalysis; projectId: string; selectedImageModel: string }) {
   const { toast } = useToast();
   const [charRefs, setCharRefs] = useState<any[]>([]);
@@ -1530,6 +1595,7 @@ function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: S
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
   const [feedbackRefId, setFeedbackRefId] = useState<string | null>(null);
   const [feedbackText, setFeedbackText] = useState("");
+  const [lightboxImage, setLightboxImage] = useState<{ url: string; name: string; angle: string } | null>(null);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const fetchCharRefs = useCallback(async () => {
@@ -1618,9 +1684,18 @@ function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: S
 
   const completedRefs = charRefs.filter(r => r.status === "completed" && r.imageUrl);
   const generatingRefs = charRefs.filter(r => r.status === "generating");
+  const totalExpectedRefs = analysis.characters.length * 3;
 
   return (
     <div className="space-y-6">
+      {lightboxImage && (
+        <PortraitLightbox
+          imageUrl={lightboxImage.url}
+          characterName={lightboxImage.name}
+          angle={lightboxImage.angle}
+          onClose={() => setLightboxImage(null)}
+        />
+      )}
       <Card className="glass-card rounded-2xl overflow-hidden p-0">
         <div className="px-5 pt-5 pb-4 border-b border-white/5">
           <div className="flex items-center gap-3">
@@ -1716,60 +1791,97 @@ function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: S
               }`}
             >
               {isGeneratingRefs || generatingRefs.length > 0 ? (
-                <><Loader2 className="w-3.5 h-3.5 animate-spin" />Generating Portraits ({completedRefs.length}/{analysis.characters.length})</>
+                <><Loader2 className="w-3.5 h-3.5 animate-spin" />Generating Portraits ({completedRefs.length}/{totalExpectedRefs})</>
               ) : completedRefs.length > 0 ? (
                 <><RefreshCw className="w-3.5 h-3.5" />Regenerate All Portraits</>
               ) : (
-                <><Camera className="w-3.5 h-3.5" />Generate Character Portraits</>
+                <><Camera className="w-3.5 h-3.5" />Generate Character Portraits (3 angles each)</>
               )}
             </button>
           </div>
           {completedRefs.length > 0 && (
             <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
-              These portraits are used as visual references when generating scene images to keep characters looking consistent.
+              Multi-angle portraits (front, three-quarter, profile) are used as visual references when generating scene images to keep characters looking consistent. Click any portrait to view full size.
             </p>
           )}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-4">
             {analysis.characters.map((char, i) => {
-              const ref = charRefs.find(r => r.characterName === char.name);
+              const angleOrder = ["front", "three-quarter", "profile"];
+              const angleLabels: Record<string, string> = { front: "Front", "three-quarter": "3/4", profile: "Profile" };
+              const charAngleRefs = angleOrder.map(angle => {
+                return charRefs.find(r => r.characterName === char.name && (r.angle || "front") === angle) || null;
+              });
+              const hasAnyRef = charAngleRefs.some(r => r !== null);
+
               return (
                 <Card key={i} className="glass-card p-4 rounded-2xl">
-                  <div className="flex gap-3">
-                    {ref && ref.status === "completed" && ref.imageUrl ? (
-                      <div className="relative flex-shrink-0 group">
-                        <img
-                          src={proxyUrl(ref.imageUrl)}
-                          alt={char.name}
-                          className="w-24 h-24 object-cover rounded-xl border border-[var(--glass-border)] shadow-md ring-1 ring-white/[0.04]"
-                        />
-                        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center gap-1.5">
-                          <button
-                            onClick={() => regeneratePortrait(ref.id)}
-                            className="p-1.5 bg-white/15 hover:bg-white/25 rounded-lg transition-colors backdrop-blur-sm"
-                            disabled={regeneratingId === ref.id}
-                            title="Regenerate"
-                          >
-                            <RefreshCw className="w-4 h-4 text-white" />
-                          </button>
-                          <button
-                            onClick={() => { setFeedbackRefId(ref.id); setFeedbackText(""); }}
-                            className="p-1.5 bg-white/15 hover:bg-white/25 rounded-lg transition-colors backdrop-blur-sm"
-                            disabled={regeneratingId === ref.id}
-                            title="Redo with feedback"
-                          >
-                            <MessageSquare className="w-4 h-4 text-white" />
-                          </button>
+                  <div className="flex gap-4">
+                    <div className="flex-shrink-0">
+                      {hasAnyRef && (
+                        <div className="flex gap-2">
+                          {charAngleRefs.map((ref, ai) => {
+                            const angle = angleOrder[ai];
+                            if (ref && ref.status === "completed" && ref.imageUrl) {
+                              return (
+                                <div key={angle} className="relative group flex flex-col items-center">
+                                  <img
+                                    src={proxyUrl(ref.imageUrl)}
+                                    alt={`${char.name} - ${angleLabels[angle]}`}
+                                    className="w-20 h-20 object-cover rounded-xl border border-[var(--glass-border)] shadow-md ring-1 ring-white/[0.04] cursor-pointer hover:ring-primary/30 transition-all"
+                                    onClick={() => setLightboxImage({ url: ref.imageUrl, name: char.name, angle })}
+                                  />
+                                  <div className="absolute inset-0 bg-black/60 backdrop-blur-sm rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center gap-1">
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); setLightboxImage({ url: ref.imageUrl, name: char.name, angle }); }}
+                                      className="p-1 bg-white/15 hover:bg-white/25 rounded-md transition-colors backdrop-blur-sm"
+                                      title="View full size"
+                                    >
+                                      <Maximize className="w-3.5 h-3.5 text-white" />
+                                    </button>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); regeneratePortrait(ref.id); }}
+                                      className="p-1 bg-white/15 hover:bg-white/25 rounded-md transition-colors backdrop-blur-sm"
+                                      disabled={regeneratingId === ref.id}
+                                      title="Regenerate this angle"
+                                    >
+                                      <RefreshCw className="w-3.5 h-3.5 text-white" />
+                                    </button>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); setFeedbackRefId(ref.id); setFeedbackText(""); }}
+                                      className="p-1 bg-white/15 hover:bg-white/25 rounded-md transition-colors backdrop-blur-sm"
+                                      disabled={regeneratingId === ref.id}
+                                      title="Redo with feedback"
+                                    >
+                                      <MessageSquare className="w-3.5 h-3.5 text-white" />
+                                    </button>
+                                  </div>
+                                  <span className="text-[9px] text-muted-foreground mt-1 font-medium">{angleLabels[angle]}</span>
+                                </div>
+                              );
+                            } else if (ref && ref.status === "generating") {
+                              return (
+                                <div key={angle} className="flex flex-col items-center">
+                                  <div className="w-20 h-20 rounded-xl border border-[var(--glass-border)] glass-surface flex items-center justify-center">
+                                    <Loader2 className="w-5 h-5 text-muted-foreground animate-spin" />
+                                  </div>
+                                  <span className="text-[9px] text-muted-foreground mt-1 font-medium">{angleLabels[angle]}</span>
+                                </div>
+                              );
+                            } else if (ref && ref.status === "failed") {
+                              return (
+                                <div key={angle} className="flex flex-col items-center">
+                                  <div className="w-20 h-20 rounded-xl border border-red-500/20 bg-red-950/10 flex items-center justify-center cursor-pointer hover:border-red-500/40 transition-colors" onClick={() => regeneratePortrait(ref.id)}>
+                                    <RefreshCw className="w-4 h-4 text-red-400" />
+                                  </div>
+                                  <span className="text-[9px] text-red-400 mt-1 font-medium">{angleLabels[angle]}</span>
+                                </div>
+                              );
+                            }
+                            return null;
+                          })}
                         </div>
-                      </div>
-                    ) : ref && ref.status === "generating" ? (
-                      <div className="w-24 h-24 flex-shrink-0 rounded-xl border border-[var(--glass-border)] glass-surface flex items-center justify-center">
-                        <Loader2 className="w-6 h-6 text-muted-foreground animate-spin" />
-                      </div>
-                    ) : ref && ref.status === "failed" ? (
-                      <div className="w-24 h-24 flex-shrink-0 rounded-xl border border-red-500/20 bg-red-950/10 flex items-center justify-center cursor-pointer hover:border-red-500/40 transition-colors" onClick={() => regeneratePortrait(ref.id)}>
-                        <RefreshCw className="w-5 h-5 text-red-400" />
-                      </div>
-                    ) : null}
+                      )}
+                    </div>
                     <div className="flex-1 min-w-0">
                       <h4 className="font-semibold text-sm" data-testid={`text-character-name-${i}`}>{char.name}</h4>
                       <p className="text-xs text-muted-foreground mb-1">{char.role}</p>
@@ -1777,32 +1889,35 @@ function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: S
                       <p className="text-[11px] text-muted-foreground mt-1 line-clamp-2 leading-relaxed">
                         <span className="font-medium">Appearance:</span> {char.appearance}
                       </p>
-                      {feedbackRefId === ref?.id && (
-                        <div className="mt-2 space-y-2">
-                          <textarea
-                            value={feedbackText}
-                            onChange={(e) => setFeedbackText(e.target.value)}
-                            placeholder="Describe what you'd like changed... e.g. 'make him look more weathered and battle-worn' or 'skin should look more like Unreal Engine render, less photographic'"
-                            className="glass-input w-full h-20 text-xs rounded-xl px-3 py-2 resize-none focus:outline-none"
-                            autoFocus
-                          />
-                          <div className="flex gap-2">
-                            <button
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold gradient-btn text-white border-0 transition-all duration-200 active:scale-[0.98] disabled:opacity-50"
-                              onClick={() => regeneratePortrait(ref!.id, feedbackText)}
-                              disabled={!feedbackText.trim()}
-                            >
-                              <Send className="w-3 h-3" />Apply & Regenerate
-                            </button>
-                            <button
-                              className="px-3 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground transition-colors"
-                              onClick={() => { setFeedbackRefId(null); setFeedbackText(""); }}
-                            >
-                              Cancel
-                            </button>
+                      {charAngleRefs.map((ref) => {
+                        if (!ref || feedbackRefId !== ref.id) return null;
+                        return (
+                          <div key={ref.id} className="mt-2 space-y-2">
+                            <textarea
+                              value={feedbackText}
+                              onChange={(e) => setFeedbackText(e.target.value)}
+                              placeholder="Describe what you'd like changed... e.g. 'make him look more weathered and battle-worn' or 'wrong uniform, should be navy blue flight suit'"
+                              className="glass-input w-full h-20 text-xs rounded-xl px-3 py-2 resize-none focus:outline-none"
+                              autoFocus
+                            />
+                            <div className="flex gap-2">
+                              <button
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold gradient-btn text-white border-0 transition-all duration-200 active:scale-[0.98] disabled:opacity-50"
+                                onClick={() => regeneratePortrait(ref.id, feedbackText)}
+                                disabled={!feedbackText.trim()}
+                              >
+                                <Send className="w-3 h-3" />Apply & Regenerate
+                              </button>
+                              <button
+                                className="px-3 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground transition-colors"
+                                onClick={() => { setFeedbackRefId(null); setFeedbackText(""); }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        );
+                      })}
                     </div>
                   </div>
                 </Card>
@@ -1892,6 +2007,8 @@ function StoryboardView({
   costPerImage,
   onRegenerateSceneWithFeedback,
   regeneratingSceneId,
+  onRegenerateImageWithConsistency,
+  onRegenerateSceneWithConsistency,
 }: {
   scenes: Scene[];
   images: GeneratedImage[];
@@ -1908,6 +2025,8 @@ function StoryboardView({
   costPerImage: number;
   onRegenerateSceneWithFeedback: (sceneId: string, feedback: string) => void;
   regeneratingSceneId: string | null;
+  onRegenerateImageWithConsistency?: (imageId: string) => void;
+  onRegenerateSceneWithConsistency?: (sceneId: string) => void;
 }) {
   const [lightboxImage, setLightboxImage] = useState<GeneratedImage | null>(null);
   const [sceneFeedbackId, setSceneFeedbackId] = useState<string | null>(null);
@@ -2045,28 +2164,42 @@ function StoryboardView({
                   )}
                 </Button>
                 {hasImages && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      if (sceneFeedbackId === scene.id) {
-                        setSceneFeedbackId(null);
-                        setSceneFeedbackText("");
-                      } else {
-                        setSceneFeedbackId(scene.id);
-                        setSceneFeedbackText("");
-                      }
-                    }}
-                    disabled={regeneratingSceneId === scene.id}
-                    className="glass-border rounded-xl text-xs hover:bg-[var(--glass-highlight)] transition-all duration-200"
-                    title="Regenerate all images in this scene with your feedback"
-                  >
-                    {regeneratingSceneId === scene.id ? (
-                      <><Loader2 className="w-3 h-3 mr-1 animate-spin" />Applying...</>
-                    ) : (
-                      <><MessageSquare className="w-3 h-3 mr-1" />Scene Feedback</>
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        if (sceneFeedbackId === scene.id) {
+                          setSceneFeedbackId(null);
+                          setSceneFeedbackText("");
+                        } else {
+                          setSceneFeedbackId(scene.id);
+                          setSceneFeedbackText("");
+                        }
+                      }}
+                      disabled={regeneratingSceneId === scene.id}
+                      className="glass-border rounded-xl text-xs hover:bg-[var(--glass-highlight)] transition-all duration-200"
+                      title="Regenerate all images in this scene with your feedback"
+                    >
+                      {regeneratingSceneId === scene.id ? (
+                        <><Loader2 className="w-3 h-3 mr-1 animate-spin" />Applying...</>
+                      ) : (
+                        <><MessageSquare className="w-3 h-3 mr-1" />Scene Feedback</>
+                      )}
+                    </Button>
+                    {onRegenerateSceneWithConsistency && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onRegenerateSceneWithConsistency(scene.id)}
+                        disabled={regeneratingSceneId === scene.id}
+                        className="glass-border rounded-xl text-xs hover:bg-[var(--glass-highlight)] transition-all duration-200 text-amber-400 border-amber-500/30"
+                        title="Regenerate all scene images using character reference portraits for consistency"
+                      >
+                        <Users className="w-3 h-3 mr-1" />Consistency Regen
+                      </Button>
                     )}
-                  </Button>
+                  </>
                 )}
                 {(() => {
                   const animatable = sceneImages.filter(
@@ -2227,6 +2360,18 @@ function StoryboardView({
                                 >
                                   <Pencil className="w-3 h-3" />
                                 </Button>
+                                {onRegenerateImageWithConsistency && (
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-6 w-6 bg-black/50 text-amber-400/90 backdrop-blur-sm rounded-lg"
+                                    onClick={(e) => { e.stopPropagation(); onRegenerateImageWithConsistency(img.id); }}
+                                    disabled={regeneratingImageId === img.id}
+                                    title="Regenerate with character consistency"
+                                  >
+                                    <Users className="w-3 h-3" />
+                                  </Button>
+                                )}
                                 {(!img.videoStatus || img.videoStatus === "failed") ? (
                                   <DropdownMenu>
                                     <DropdownMenuTrigger asChild>

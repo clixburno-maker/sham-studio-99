@@ -28,9 +28,8 @@ Once a project exists, the system analyzes the script using Claude Opus 4.6, bui
 - **AI Script Writing**: Claude Sonnet via Anthropic API (topic → script generation)
 - **AI Analysis**: Claude Opus 4.6 via Anthropic API directly (uses ANTHROPIC_API_KEY)
 - **Voiceover**: ElevenLabs API (text-to-speech with voice selection)
-- **Image Generation**: Multiple models via EvoLink.AI API gateway (api.evolink.ai):
+- **Image Generation**: NanoBanana Pro only via EvoLink.AI API gateway (api.evolink.ai):
   - NanoBanana Pro ($0.05/image, 4K, Gemini-powered) - default, proven quality, up to 3 ref images
-  - SeedREAM 4.5 ($0.04/image, 4K, ByteDance) - superior character consistency, up to 10 ref images
 - **Image-to-Video**: Multiple models via EvoLink.AI API gateway:
   - Grok Imagine Video ($0.064/clip, 6s, 720p) - default, fast and affordable
   - Seedance 1.5 Pro ($0.198/clip, 8s, 720p) - ByteDance cinematic with camera control
@@ -39,12 +38,22 @@ Once a project exists, the system analyzes the script using Claude Opus 4.6, bui
   - Kling 3.0 ($1.50/clip, 15s, 1080p) - premium maximum-duration clips with best motion
   - Sora 2 Pro ($0.958/clip, 15s, 1080p HD) - OpenAI premium with physics-accurate motion
 
+## Character Reference System
+- **Multi-angle portraits**: Each character gets 3 portraits (front view, three-quarter view, side profile)
+- **Database**: `characterReferences` table with `angle` column (values: "front", "three-quarter", "profile")
+- **Consistency regeneration**: Scene images can be regenerated using character reference portraits for consistency
+  - Individual image: `POST /api/projects/:id/images/:imageId/regenerate-with-consistency`
+  - Whole scene: `POST /api/projects/:id/scenes/:sceneId/regenerate-with-consistency`
+- **Reference usage**: `getCharacterReferenceUrlsForScene()` collects all angle portraits for characters present in a scene (max 3 images per NanoBanana Pro limit)
+- **Portrait lightbox**: Clicking any character portrait opens full-size view with character name and angle label
+- **Per-angle regeneration**: Each angle can be individually regenerated with optional feedback
+
 ## Key Files
-- `shared/schema.ts` - Data models (projects with voiceoverUrl, scenes with shotLabels/expectedImages, generatedImages, nicheVideos)
+- `shared/schema.ts` - Data models (projects with voiceoverUrl, scenes with shotLabels/expectedImages, generatedImages, characterReferences with angle)
 - `server/routes.ts` - API endpoints with StoryBible/VisualScene caching + script generation + voiceover routes
 - `server/ai-analyzer.ts` - Full-story AI comprehension engine (Story Bible + visual beat grouping + unrestricted cinematographer prompts)
 - `server/script-analyzer.ts` - Legacy script analysis engine (character/jet/location extraction via regex)
-- `server/nanobanana.ts` - Image generation API integration (NanoBanana Pro + SeedREAM 4.5) and video generation
+- `server/nanobanana.ts` - Image generation API integration (NanoBanana Pro only) and video generation
 - `server/elevenlabs.ts` - ElevenLabs TTS integration (voice listing + voiceover generation)
 - `server/storage.ts` - Database CRUD operations
 - `client/src/pages/dashboard.tsx` - Project listing with AI Script Writer card
@@ -64,7 +73,7 @@ Once a project exists, the system analyzes the script using Claude Opus 4.6, bui
 2. **Visual Beat Grouping**: Sentences grouped into visual beats by an AI film editor
 3. **Cross-Scene Continuity (CumulativeVisualMemory)**: Cumulative memory from previous scenes
 4. **Variable Image Sequence Generation**: Each visual beat gets 2-10 image prompts
-5. **Character Reference Portraits**: Reference portrait images for visual consistency
+5. **Character Reference Portraits**: Multi-angle reference portrait images (front, 3/4, profile) for visual consistency
 6. **Total Visual Consistency with Identity Anchoring**: ALL element descriptions copied word-for-word into every prompt
 7. **Prompt Quality**: No word limit, 800-2,000+ words per prompt
 8. **AI-Powered Motion Prompts**: Intelligent motion prompts for video generation
@@ -87,13 +96,15 @@ Once a project exists, the system analyzes the script using Claude Opus 4.6, bui
 - `POST /api/projects/:id/analyze` - Full-story AI analysis (Claude Opus 4.6)
 - `GET /api/projects/:id/analyze-progress` - Poll analysis progress
 - `GET /api/projects/:id/character-references` - Get character reference portraits
-- `POST /api/projects/:id/generate-character-references` - Generate reference portraits
-- `POST /api/projects/:id/character-references/:refId/regenerate` - Regenerate a single portrait
+- `POST /api/projects/:id/generate-character-references` - Generate multi-angle reference portraits (3 per character)
+- `POST /api/projects/:id/character-references/:refId/regenerate` - Regenerate a single portrait angle
 - `POST /api/projects/:id/character-references/poll` - Poll portrait generation status
 - `POST /api/projects/:id/scenes/:sceneId/generate` - Generate images for a scene
 - `POST /api/projects/:id/generate-all` - Generate images for all scenes
 - `POST /api/projects/:id/poll-images` - Poll image generation status
 - `POST /api/projects/:id/images/:imageId/regenerate` - Regenerate a single image
+- `POST /api/projects/:id/images/:imageId/regenerate-with-consistency` - Regenerate image using character portraits
+- `POST /api/projects/:id/scenes/:sceneId/regenerate-with-consistency` - Regenerate all scene images using character portraits
 - `POST /api/projects/:id/scenes/:sceneId/animate-all` - Generate videos for all images in a scene
 - `POST /api/projects/:id/images/:imageId/generate-video` - Create video from image
 - `POST /api/images/:imageId/check-video` - Check video generation status

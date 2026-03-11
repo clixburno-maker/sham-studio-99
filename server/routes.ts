@@ -845,21 +845,42 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
       await storage.deleteCharacterReferencesByProject(project.id);
 
+      const angles: { key: string; label: string; poseInstruction: string }[] = [
+        {
+          key: "front",
+          label: "Front View",
+          poseInstruction: "facing directly toward camera, symmetrical straight-on front view, direct eye contact, arms relaxed at sides",
+        },
+        {
+          key: "three-quarter",
+          label: "Three-Quarter View",
+          poseInstruction: "facing three-quarter angle toward camera (45 degrees turned), face clearly visible with direct eye contact, natural relaxed pose",
+        },
+        {
+          key: "profile",
+          label: "Side Profile",
+          poseInstruction: "side profile view (90 degrees turned), showing the full silhouette of the face, nose, jawline, and body from the side, looking straight ahead not toward camera",
+        },
+      ];
+
       const refs = [];
       for (const char of analysis.characters) {
-        const prompt = `Unreal Engine 5 cinematic 3D render, high-fidelity CGI character reference sheet with slight stylization — NOT a photograph, ultra-detailed, 16:9 widescreen. FULL BODY STANDING PORTRAIT of ${char.name} — showing head to feet, entire body visible. ${char.appearance}. ${char.signatureFeatures ? `SIGNATURE FEATURES: ${char.signatureFeatures}.` : ""} Shot type: full-body standing pose, feet visible at bottom of frame, head visible at top, the character is standing upright facing three-quarter angle toward camera with face clearly visible and direct eye contact. Arms relaxed at sides or in a natural at-ease pose. The ENTIRE body from head to boots/shoes must be visible — do NOT crop at waist or chest. Clean solid neutral dark gray background with soft cinematic studio lighting — bright key light from upper right at 45 degrees, cool fill from left, strong rim light outlining the full body silhouette. Expression: neutral-confident, conveying authority and presence. High-fidelity CGI skin with subsurface scattering, highly detailed facial features clearly visible, detailed fabric textures on clothing/uniform with every button, insignia, pocket and accessory rendered accurately, detailed hands and footwear. This is a CHARACTER REFERENCE IMAGE — the purpose is to establish exactly what this character looks like from head to toe for visual consistency in later scenes. Unreal Engine 5 quality render, NOT a real photograph. No text, no watermarks, no UI elements.`;
+        for (const angle of angles) {
+          const prompt = `Unreal Engine 5 cinematic 3D render, high-fidelity CGI character reference sheet with slight stylization — NOT a photograph, ultra-detailed, 16:9 widescreen. FULL BODY STANDING PORTRAIT of ${char.name} — ${angle.label} — showing head to feet, entire body visible. ${char.appearance}. ${char.signatureFeatures ? `SIGNATURE FEATURES: ${char.signatureFeatures}.` : ""} Shot type: full-body standing pose, ${angle.poseInstruction}. The ENTIRE body from head to boots/shoes must be visible — do NOT crop at waist or chest. Clean solid neutral dark gray background with soft cinematic studio lighting — bright key light from upper right at 45 degrees, cool fill from left, strong rim light outlining the full body silhouette. Expression: neutral-confident, conveying authority and presence. High-fidelity CGI skin with subsurface scattering, highly detailed facial features clearly visible, detailed fabric textures on clothing/uniform with every button, insignia, pocket and accessory rendered accurately, detailed hands and footwear. This is a CHARACTER REFERENCE IMAGE (${angle.label}) — the purpose is to establish exactly what this character looks like from this specific angle for visual consistency in later scenes. Unreal Engine 5 quality render, NOT a real photograph. No text, no watermarks, no UI elements.`;
 
-        const { taskId } = await generateImage(prompt, undefined, imgModel);
-        const ref = await storage.createCharacterReference({
-          projectId: project.id,
-          characterName: char.name,
-          description: char.appearance,
-          prompt,
-          status: "generating",
-          taskId,
-          imageUrl: null,
-        });
-        refs.push(ref);
+          const { taskId } = await generateImage(prompt, undefined, imgModel);
+          const ref = await storage.createCharacterReference({
+            projectId: project.id,
+            characterName: char.name,
+            description: char.appearance,
+            prompt,
+            status: "generating",
+            taskId,
+            imageUrl: null,
+            angle: angle.key,
+          });
+          refs.push(ref);
+        }
       }
 
       res.json({ started: true, count: refs.length, refs });
@@ -882,14 +903,36 @@ Write the script now. Output ONLY the script text, nothing else.`,
     if (charactersPresent.length === 0) return [];
 
     const refs = await storage.getCharacterReferencesByProject(projectId);
-    const urls: string[] = [];
+    const angleOrder = ["front", "three-quarter", "profile"];
+    const maxRefs = 3;
+
+    const charRefMap: Map<string, string[]> = new Map();
     for (const charName of charactersPresent) {
-      const ref = refs.find(r => r.status === "completed" && r.imageUrl && r.characterName.toLowerCase() === charName.toLowerCase());
-      if (ref && ref.imageUrl) {
-        urls.push(ref.imageUrl);
+      const charRefs = refs
+        .filter(r => r.status === "completed" && r.imageUrl && r.characterName.toLowerCase() === charName.toLowerCase())
+        .sort((a, b) => angleOrder.indexOf(a.angle || "front") - angleOrder.indexOf(b.angle || "front"));
+      if (charRefs.length > 0) {
+        charRefMap.set(charName, charRefs.map(r => r.imageUrl!));
       }
     }
-    return urls;
+
+    if (charRefMap.size === 0) return [];
+
+    const urls: string[] = [];
+    const perChar = Math.max(1, Math.floor(maxRefs / charRefMap.size));
+    for (const [, charUrls] of charRefMap) {
+      urls.push(...charUrls.slice(0, perChar));
+    }
+    if (urls.length < maxRefs) {
+      for (const [, charUrls] of charRefMap) {
+        for (const url of charUrls) {
+          if (!urls.includes(url) && urls.length < maxRefs) {
+            urls.push(url);
+          }
+        }
+      }
+    }
+    return urls.slice(0, maxRefs);
   }
 
   const storyBibleCache = new Map<string, StoryBible>();
@@ -1069,22 +1112,31 @@ Write the script now. Output ONLY the script text, nothing else.`,
             try {
               const existingRefs = await storage.getCharacterReferencesByProject(project.id);
               if (existingRefs.length === 0) {
-                console.log(`[auto-portraits] Generating ${analysis.characters.length} character portraits for project ${project.id}`);
+                const autoAngles = [
+                  { key: "front", label: "Front View", poseInstruction: "facing directly toward camera, symmetrical straight-on front view, direct eye contact, arms relaxed at sides" },
+                  { key: "three-quarter", label: "Three-Quarter View", poseInstruction: "facing three-quarter angle toward camera (45 degrees turned), face clearly visible with direct eye contact, natural relaxed pose" },
+                  { key: "profile", label: "Side Profile", poseInstruction: "side profile view (90 degrees turned), showing the full silhouette of the face, nose, jawline, and body from the side, looking straight ahead not toward camera" },
+                ];
+                const totalPortraits = analysis.characters.length * autoAngles.length;
+                console.log(`[auto-portraits] Generating ${totalPortraits} character portraits (${analysis.characters.length} chars × ${autoAngles.length} angles) for project ${project.id}`);
                 for (const char of analysis.characters) {
-                  const portraitPrompt = `Unreal Engine 5 cinematic 3D render, high-fidelity CGI character reference sheet with slight stylization — NOT a photograph, ultra-detailed, 16:9 widescreen. FULL BODY STANDING PORTRAIT of ${char.name} — showing head to feet, entire body visible. ${char.appearance}. ${char.signatureFeatures ? `SIGNATURE FEATURES: ${char.signatureFeatures}.` : ""} Shot type: full-body standing pose, feet visible at bottom of frame, head visible at top, the character is standing upright facing three-quarter angle toward camera with face clearly visible and direct eye contact. Arms relaxed at sides or in a natural at-ease pose. The ENTIRE body from head to boots/shoes must be visible — do NOT crop at waist or chest. Clean solid neutral dark gray background with soft cinematic studio lighting — bright key light from upper right at 45 degrees, cool fill from left, strong rim light outlining the full body silhouette. Expression: neutral-confident, conveying authority and presence. High-fidelity CGI skin with subsurface scattering, highly detailed facial features clearly visible, detailed fabric textures on clothing/uniform with every button, insignia, pocket and accessory rendered accurately, detailed hands and footwear. This is a CHARACTER REFERENCE IMAGE — the purpose is to establish exactly what this character looks like from head to toe for visual consistency in later scenes. Unreal Engine 5 quality render, NOT a real photograph. No text, no watermarks, no UI elements.`;
-                  try {
-                    const { taskId } = await generateImage(portraitPrompt);
-                    await storage.createCharacterReference({
-                      projectId: project.id,
-                      characterName: char.name,
-                      description: char.appearance,
-                      prompt: portraitPrompt,
-                      status: "generating",
-                      taskId,
-                      imageUrl: null,
-                    });
-                  } catch (portraitErr: any) {
-                    console.error(`[auto-portraits] Failed to generate portrait for ${char.name}:`, portraitErr.message);
+                  for (const angle of autoAngles) {
+                    const portraitPrompt = `Unreal Engine 5 cinematic 3D render, high-fidelity CGI character reference sheet with slight stylization — NOT a photograph, ultra-detailed, 16:9 widescreen. FULL BODY STANDING PORTRAIT of ${char.name} — ${angle.label} — showing head to feet, entire body visible. ${char.appearance}. ${char.signatureFeatures ? `SIGNATURE FEATURES: ${char.signatureFeatures}.` : ""} Shot type: full-body standing pose, ${angle.poseInstruction}. The ENTIRE body from head to boots/shoes must be visible — do NOT crop at waist or chest. Clean solid neutral dark gray background with soft cinematic studio lighting — bright key light from upper right at 45 degrees, cool fill from left, strong rim light outlining the full body silhouette. Expression: neutral-confident, conveying authority and presence. High-fidelity CGI skin with subsurface scattering, highly detailed facial features clearly visible, detailed fabric textures on clothing/uniform with every button, insignia, pocket and accessory rendered accurately, detailed hands and footwear. This is a CHARACTER REFERENCE IMAGE (${angle.label}) — the purpose is to establish exactly what this character looks like from this specific angle for visual consistency in later scenes. Unreal Engine 5 quality render, NOT a real photograph. No text, no watermarks, no UI elements.`;
+                    try {
+                      const { taskId } = await generateImage(portraitPrompt);
+                      await storage.createCharacterReference({
+                        projectId: project.id,
+                        characterName: char.name,
+                        description: char.appearance,
+                        prompt: portraitPrompt,
+                        status: "generating",
+                        taskId,
+                        imageUrl: null,
+                        angle: angle.key,
+                      });
+                    } catch (portraitErr: any) {
+                      console.error(`[auto-portraits] Failed to generate ${angle.label} portrait for ${char.name}:`, portraitErr.message);
+                    }
                   }
                 }
                 console.log(`[auto-portraits] Character portrait generation initiated for project ${project.id}`);
@@ -1853,6 +1905,77 @@ Write the script now. Output ONLY the script text, nothing else.`,
       })();
     } catch (err: any) {
       console.error("Scene feedback regeneration error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/projects/:id/images/:imageId/regenerate-with-consistency", async (req, res) => {
+    try {
+      const img = await storage.getImageById(req.params.imageId);
+      if (!img) return res.status(404).json({ error: "Image not found" });
+      if (img.projectId !== req.params.id) return res.status(400).json({ error: "Image does not belong to this project" });
+
+      const { imageModel } = req.body || {};
+      const imgModel = (imageModel as ImageModelId) || undefined;
+      const scene = await storage.getScene(img.sceneId);
+
+      await storage.updateImage(img.id, { status: "generating", imageUrl: null });
+      res.json({ status: "regenerating", message: "Regenerating with character consistency references..." });
+
+      (async () => {
+        try {
+          const charRefUrls = scene ? await getCharacterReferenceUrlsForScene(req.params.id, scene) : [];
+          if (charRefUrls.length === 0) {
+            console.warn(`[consistency-regen] No character reference images found for image ${img.id}`);
+          }
+          console.log(`[consistency-regen] Regenerating image ${img.id} with ${charRefUrls.length} character reference(s)`);
+          const { taskId } = await generateImage(img.prompt, charRefUrls.length > 0 ? charRefUrls : undefined, imgModel);
+          await storage.updateImage(img.id, { status: "generating", taskId });
+        } catch (err: any) {
+          console.error(`[consistency-regen] Failed for image ${img.id}:`, err.message);
+          await storage.updateImage(img.id, { status: "failed" });
+        }
+      })();
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/projects/:id/scenes/:sceneId/regenerate-with-consistency", async (req, res) => {
+    try {
+      const project = await storage.getProject(req.params.id);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      const scene = await storage.getScene(req.params.sceneId);
+      if (!scene) return res.status(404).json({ error: "Scene not found" });
+
+      const { imageModel } = req.body || {};
+      const imgModel = (imageModel as ImageModelId) || undefined;
+      const sceneImages = (await storage.getImagesByProject(project.id)).filter(img => img.sceneId === scene.id);
+
+      if (sceneImages.length === 0) return res.status(400).json({ error: "No images in this scene to regenerate" });
+
+      for (const img of sceneImages) {
+        await storage.updateImage(img.id, { status: "generating", imageUrl: null });
+      }
+
+      res.json({ status: "regenerating", total: sceneImages.length, message: "Regenerating all scene images with character consistency..." });
+
+      (async () => {
+        const charRefUrls = await getCharacterReferenceUrlsForScene(project.id, scene);
+        console.log(`[consistency-regen-scene] Regenerating ${sceneImages.length} images with ${charRefUrls.length} character reference(s)`);
+
+        for (const img of sceneImages) {
+          try {
+            const { taskId } = await generateImage(img.prompt, charRefUrls.length > 0 ? charRefUrls : undefined, imgModel);
+            await storage.updateImage(img.id, { status: "generating", taskId });
+          } catch (err: any) {
+            console.error(`[consistency-regen-scene] Failed for image ${img.id}:`, err.message);
+            await storage.updateImage(img.id, { status: "failed" });
+          }
+        }
+      })();
+    } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });
