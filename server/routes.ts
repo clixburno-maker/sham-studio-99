@@ -1847,6 +1847,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
           const WAVE_TIMEOUT = 10 * 60 * 1000;
           const wavePollStart = Date.now();
 
+          const pollErrors: Record<string, number> = {};
           while (Date.now() - wavePollStart < WAVE_TIMEOUT) {
             const allImages = await storage.getImagesByProject(project.id);
             const generating = allImages.filter(img => img.status === "generating" && img.taskId);
@@ -1879,7 +1880,16 @@ Write the script now. Output ONLY the script text, nothing else.`,
                     } else if (result.status === "failed") {
                       await storage.updateImage(img.id, { status: "failed", error: result.error || "Image generation failed" });
                     }
-                  } catch (e) {}
+                  } catch (e: any) {
+                    const errKey = img.taskId || img.id.toString();
+                    pollErrors[errKey] = (pollErrors[errKey] || 0) + 1;
+                    if (pollErrors[errKey] >= 5) {
+                      console.error(`[generate-all] Task ${errKey} failed after 5 poll errors: ${e.message}`);
+                      await storage.updateImage(img.id, { status: "failed", error: `Poll error: ${e.message}` });
+                    } else {
+                      console.warn(`[generate-all] Poll error for task ${errKey}: ${e.message}`);
+                    }
+                  }
                 })
               );
             }
@@ -2266,6 +2276,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
           const WAVE_TIMEOUT = 10 * 60 * 1000;
           const wavePollStart = Date.now();
 
+          const retryPollErrors: Record<string, number> = {};
           while (Date.now() - wavePollStart < WAVE_TIMEOUT) {
             const currentAllImages = await storage.getImagesByProject(project.id);
             const generating = currentAllImages.filter(img => img.status === "generating" && img.taskId);
@@ -2296,9 +2307,18 @@ Write the script now. Output ONLY the script text, nothing else.`,
                     if (result.status === "completed" && result.imageUrl) {
                       await storage.updateImage(img.id, { status: "completed", imageUrl: result.imageUrl });
                     } else if (result.status === "failed") {
-                      await storage.updateImage(img.id, { status: "failed" });
+                      await storage.updateImage(img.id, { status: "failed", error: result.error || "Image generation failed" });
                     }
-                  } catch (e) {}
+                  } catch (e: any) {
+                    const errKey = img.taskId || img.id.toString();
+                    retryPollErrors[errKey] = (retryPollErrors[errKey] || 0) + 1;
+                    if (retryPollErrors[errKey] >= 5) {
+                      console.error(`[retry-failed] Task ${errKey} failed after 5 poll errors: ${e.message}`);
+                      await storage.updateImage(img.id, { status: "failed", error: `Poll error: ${e.message}` });
+                    } else {
+                      console.warn(`[retry-failed] Poll error for task ${errKey}: ${e.message}`);
+                    }
+                  }
                 })
               );
             }
