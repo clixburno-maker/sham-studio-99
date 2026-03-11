@@ -1,10 +1,5 @@
-import { getApiKey } from "./api-keys";
-
+const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
 const ELEVENLABS_API_URL = "https://api.elevenlabs.io/v1";
-
-async function getElevenlabsKey(): Promise<string | undefined> {
-  return getApiKey("elevenlabs");
-}
 
 export interface Voice {
   voice_id: string;
@@ -49,9 +44,8 @@ export async function generateVoiceover(
   text: string,
   voiceId: string = "Brian"
 ): Promise<Buffer> {
-  const apiKey = await getElevenlabsKey();
-  if (!apiKey) {
-    throw new Error("ElevenLabs API key is not configured. Please add it in Settings or Secrets.");
+  if (!ELEVENLABS_API_KEY) {
+    throw new Error("ELEVENLABS_API_KEY is not configured");
   }
 
   let resolvedId = voiceId;
@@ -65,7 +59,7 @@ export async function generateVoiceover(
   const res = await fetch(`${ELEVENLABS_API_URL}/text-to-speech/${resolvedId}`, {
     method: "POST",
     headers: {
-      "xi-api-key": apiKey,
+      "xi-api-key": ELEVENLABS_API_KEY,
       "Content-Type": "application/json",
       "Accept": "audio/mpeg",
     },

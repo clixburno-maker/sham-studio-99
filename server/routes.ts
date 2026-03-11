@@ -3,13 +3,12 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { analyzeFullStory, generateSequencePrompts, analyzeAndImprovePrompt, applyFeedbackToPrompt, generateSmartMotionPrompt, type VisualScene, type StoryBible } from "./ai-analyzer";
 import { generateImage, checkImageStatus, generateVideo, checkVideoStatus, VIDEO_MODELS, getVideoModelConfig, IMAGE_MODELS, getImageModelConfig, type VideoModelId, type ImageModelId } from "./nanobanana";
-import { insertProjectSchema, insertNicheSchema, type ScriptAnalysis, type LocationReference } from "@shared/schema";
+import { insertProjectSchema, insertNicheSchema, type ScriptAnalysis } from "@shared/schema";
 import { extractChannelTranscripts, extractSelectedVideoTranscripts, getChannelVideos } from "./youtube";
 import { streamExportPDF } from "./pdf-export";
 import archiver from "archiver";
 import { Readable } from "stream";
 import Anthropic from "@anthropic-ai/sdk";
-import { getApiKey, clearKeyCache } from "./api-keys";
 import { generateVoiceover, getVoices } from "./elevenlabs";
 import * as fs from "fs";
 import * as path from "path";
@@ -310,8 +309,7 @@ export async function registerRoutes(
 
           advanceAnalysisStep(1, `Feeding ${usedVideos.length} scripts to AI for tone & pacing analysis...`);
 
-          const anthropicKey = await getApiKey("anthropic");
-          const anthropic = new Anthropic({ apiKey: anthropicKey });
+          const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
           const stylePromptContent = `You are a writing style analyst. Analyze these YouTube video transcripts from the same creator/channel and extract a detailed writing style profile. These are all from the channel "${niche.channelName}".
 
@@ -555,8 +553,7 @@ You MUST match this writing style exactly. Mimic the tone, sentence rhythm, voca
 
       const maxTokens = Math.max(8192, Math.min(Math.round(wordMax * 2), 32000));
 
-      const anthropicKey2 = await getApiKey("anthropic");
-      const anthropic = new Anthropic({ apiKey: anthropicKey2 });
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
       const message = await anthropic.messages.create({
         model: "claude-opus-4-6",
@@ -850,39 +847,19 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
       const refs = [];
       for (const char of analysis.characters) {
-        const anglePrompts: { angleType: string; prompt: string }[] = [
-          {
-            angleType: "full_body",
-            prompt: `Unreal Engine 5 cinematic 3D render, high-fidelity CGI character reference sheet with slight stylization — NOT a photograph, ultra-detailed, 16:9 widescreen. FULL BODY STANDING PORTRAIT of ${char.name} — showing head to feet, entire body visible. ${char.appearance}. ${char.signatureFeatures ? `SIGNATURE FEATURES: ${char.signatureFeatures}.` : ""} Shot type: full-body standing pose, feet visible at bottom of frame, head visible at top, the character is standing upright facing three-quarter angle toward camera with face clearly visible and direct eye contact. Arms relaxed at sides or in a natural at-ease pose. The ENTIRE body from head to boots/shoes must be visible — do NOT crop at waist or chest. Clean solid neutral dark gray background with soft cinematic studio lighting — bright key light from upper right at 45 degrees, cool fill from left, strong rim light outlining the full body silhouette. Expression: neutral-confident, conveying authority and presence. High-fidelity CGI skin with subsurface scattering, highly detailed facial features clearly visible, detailed fabric textures on clothing/uniform with every button, insignia, pocket and accessory rendered accurately, detailed hands and footwear. This is a CHARACTER REFERENCE IMAGE — the purpose is to establish exactly what this character looks like from head to toe for visual consistency in later scenes. Unreal Engine 5 quality render, NOT a real photograph. No text, no watermarks, no UI elements.`,
-          },
-          {
-            angleType: "face_closeup",
-            prompt: `Unreal Engine 5 cinematic 3D render, high-fidelity CGI extreme close-up portrait — NOT a photograph, ultra-detailed, 16:9 widescreen. EXTREME CLOSE-UP FACE PORTRAIT of ${char.name}. ${char.appearance}. ${char.signatureFeatures ? `SIGNATURE FEATURES: ${char.signatureFeatures}.` : ""} Shot type: tight face close-up filling the entire frame, front-facing, direct eye contact with camera. Every facial detail visible — skin pores, eye color and iris detail, eyebrow texture, lip texture, facial hair if any, scars or distinguishing marks. Clean solid neutral dark gray background with soft cinematic studio lighting — bright key light from upper right at 45 degrees creating subtle shadows on face, cool fill from left, rim light outlining jaw and cheekbone. Expression: neutral-intense, eyes conveying character depth. High-fidelity CGI skin with subsurface scattering, photorealistic eye reflections and moisture. This is a FACE REFERENCE IMAGE for visual consistency. Unreal Engine 5 quality render, NOT a real photograph. No text, no watermarks, no UI elements.`,
-          },
-          {
-            angleType: "profile",
-            prompt: `Unreal Engine 5 cinematic 3D render, high-fidelity CGI side profile portrait — NOT a photograph, ultra-detailed, 16:9 widescreen. SIDE PROFILE VIEW of ${char.name} — head and shoulders, showing the complete silhouette of nose, jaw, chin, ear, and forehead from a 90-degree side angle. ${char.appearance}. ${char.signatureFeatures ? `SIGNATURE FEATURES: ${char.signatureFeatures}.` : ""} Shot type: clean side profile, the character is looking to the left of frame, showing the full contour of their face and head shape. Hair, ear, and neck clearly visible. Clean solid neutral dark gray background with soft cinematic studio lighting — strong rim light outlining the full profile silhouette from behind, soft fill from front to reveal subtle facial detail. Expression: composed, neutral. High-fidelity CGI skin with subsurface scattering, detailed ear and hair texture. This is a PROFILE REFERENCE IMAGE for visual consistency across angles. Unreal Engine 5 quality render, NOT a real photograph. No text, no watermarks, no UI elements.`,
-          },
-        ];
+        const prompt = `Unreal Engine 5 cinematic 3D render, high-fidelity CGI character reference sheet with slight stylization — NOT a photograph, ultra-detailed, 16:9 widescreen. FULL BODY STANDING PORTRAIT of ${char.name} — showing head to feet, entire body visible. ${char.appearance}. ${char.signatureFeatures ? `SIGNATURE FEATURES: ${char.signatureFeatures}.` : ""} Shot type: full-body standing pose, feet visible at bottom of frame, head visible at top, the character is standing upright facing three-quarter angle toward camera with face clearly visible and direct eye contact. Arms relaxed at sides or in a natural at-ease pose. The ENTIRE body from head to boots/shoes must be visible — do NOT crop at waist or chest. Clean solid neutral dark gray background with soft cinematic studio lighting — bright key light from upper right at 45 degrees, cool fill from left, strong rim light outlining the full body silhouette. Expression: neutral-confident, conveying authority and presence. High-fidelity CGI skin with subsurface scattering, highly detailed facial features clearly visible, detailed fabric textures on clothing/uniform with every button, insignia, pocket and accessory rendered accurately, detailed hands and footwear. This is a CHARACTER REFERENCE IMAGE — the purpose is to establish exactly what this character looks like from head to toe for visual consistency in later scenes. Unreal Engine 5 quality render, NOT a real photograph. No text, no watermarks, no UI elements.`;
 
-        for (const { angleType, prompt } of anglePrompts) {
-          try {
-            const { taskId } = await generateImage(prompt, undefined, imgModel);
-            const ref = await storage.createCharacterReference({
-              projectId: project.id,
-              characterName: char.name,
-              description: char.appearance,
-              prompt,
-              status: "generating",
-              taskId,
-              imageUrl: null,
-              angleType,
-            });
-            refs.push(ref);
-          } catch (err: any) {
-            console.error(`[char-ref] Failed to generate ${angleType} for ${char.name}:`, err.message);
-          }
-        }
+        const { taskId } = await generateImage(prompt, undefined, imgModel);
+        const ref = await storage.createCharacterReference({
+          projectId: project.id,
+          characterName: char.name,
+          description: char.appearance,
+          prompt,
+          status: "generating",
+          taskId,
+          imageUrl: null,
+        });
+        refs.push(ref);
       }
 
       res.json({ started: true, count: refs.length, refs });
@@ -891,142 +868,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
     }
   });
 
-  app.get("/api/projects/:id/location-references", async (req, res) => {
-    try {
-      const refs = await storage.getLocationReferencesByProject(req.params.id);
-      res.json(refs);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.post("/api/projects/:id/location-references/:refId/regenerate", async (req, res) => {
-    try {
-      const ref = await storage.getLocationReference(req.params.refId);
-      if (!ref) return res.status(404).json({ error: "Location reference not found" });
-      if (ref.projectId !== req.params.id) return res.status(400).json({ error: "Reference does not belong to this project" });
-
-      const { feedback, imageModel } = req.body || {};
-      const imgModel = (imageModel as ImageModelId) || undefined;
-
-      await storage.updateLocationReference(ref.id, { status: "generating", taskId: null, imageUrl: null });
-      res.json({ status: "generating" });
-
-      (async () => {
-        try {
-          let finalPrompt = ref.prompt;
-          if (feedback && feedback.trim()) {
-            finalPrompt = await applyFeedbackToPrompt(ref.prompt, feedback, true);
-          }
-          const { taskId } = await generateImage(finalPrompt, undefined, imgModel);
-          await storage.updateLocationReference(ref.id, { status: "generating", taskId, prompt: finalPrompt });
-        } catch (err: any) {
-          console.error(`[loc-ref] Regeneration failed for ${ref.locationName}:`, err.message);
-          try {
-            const { taskId } = await generateImage(ref.prompt, undefined, imgModel);
-            await storage.updateLocationReference(ref.id, { status: "generating", taskId });
-          } catch {
-            await storage.updateLocationReference(ref.id, { status: "failed" });
-          }
-        }
-      })();
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.post("/api/projects/:id/location-references/poll", async (req, res) => {
-    try {
-      const refs = await storage.getLocationReferencesByProject(req.params.id);
-      let updated = 0;
-      for (const ref of refs) {
-        if (ref.status === "generating" && ref.taskId) {
-          try {
-            const result = await checkImageStatus(ref.taskId);
-            if (result.status === "completed" && result.imageUrl) {
-              await storage.updateLocationReference(ref.id, { status: "completed", imageUrl: result.imageUrl });
-              updated++;
-            } else if (result.status === "failed") {
-              await storage.updateLocationReference(ref.id, { status: "failed" });
-              updated++;
-            }
-          } catch {}
-        }
-      }
-      const latest = await storage.getLocationReferencesByProject(req.params.id);
-      res.json(latest);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.post("/api/projects/:id/generate-location-references", async (req, res) => {
-    try {
-      const project = await storage.getProject(req.params.id);
-      if (!project) return res.status(404).json({ error: "Project not found" });
-      const analysis = project.analysis as ScriptAnalysis;
-      if (!analysis || !analysis.locations || analysis.locations.length === 0) {
-        return res.status(400).json({ error: "No locations found. Analyze the project first." });
-      }
-
-      const imgModel = (req.body?.imageModel as ImageModelId) || undefined;
-
-      await storage.deleteLocationReferencesByProject(project.id);
-
-      const scenes = await storage.getScenesByProject(project.id);
-      const locationFreq = new Map<string, number>();
-      for (const scene of scenes) {
-        if (scene.location && scene.location !== "Unspecified") {
-          const locKey = scene.location.trim();
-          locationFreq.set(locKey, (locationFreq.get(locKey) || 0) + 1);
-        }
-      }
-      const topLocations = Array.from(locationFreq.entries())
-        .filter(([, count]) => count >= 2)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5);
-
-      if (topLocations.length === 0) {
-        return res.json({ started: true, count: 0, refs: [], message: "No recurring locations found (need 2+ scene appearances)." });
-      }
-
-      const locLookup = new Map<string, typeof analysis.locations[0]>();
-      for (const loc of analysis.locations) {
-        locLookup.set(loc.name.toLowerCase(), loc);
-      }
-
-      const refs = [];
-      for (const [locName, sceneCount] of topLocations) {
-        const locData = locLookup.get(locName.toLowerCase());
-        const visualDetails = locData?.visualDetails || "";
-        const description = locData?.description || locName;
-
-        const locPrompt = `Unreal Engine 5 cinematic 3D render, high-fidelity CGI establishing shot — NOT a photograph, ultra-detailed, 16:9 widescreen. WIDE ESTABLISHING SHOT of ${locName}. ${description}. ${visualDetails ? `VISUAL DETAILS: ${visualDetails}.` : ""} Shot type: wide cinematic establishing shot showing the full environment and architecture of this location. NO CHARACTERS OR PEOPLE in the scene — this is a pure environment/location reference. Rich atmospheric detail — volumetric lighting, atmospheric haze, environmental storytelling through objects and architecture. Clean cinematic composition following rule of thirds. ${analysis.visualStyle.lighting || "Dramatic cinematic lighting"}. ${analysis.visualStyle.atmosphere || ""}. Color palette: ${analysis.visualStyle.colorPalette || "cinematic"}. Time period: ${analysis.timePeriod || "modern"}. This is a LOCATION REFERENCE IMAGE — the purpose is to establish exactly what this environment looks like for visual consistency in later scenes. Unreal Engine 5 quality render, NOT a real photograph. No text, no watermarks, no UI elements.`;
-
-        try {
-          const { taskId } = await generateImage(locPrompt, undefined, imgModel);
-          const ref = await storage.createLocationReference({
-            projectId: project.id,
-            locationName: locName,
-            description: `${description} (appears in ${sceneCount} scenes)`,
-            prompt: locPrompt,
-            status: "generating",
-            taskId,
-            imageUrl: null,
-          });
-          refs.push(ref);
-        } catch (err: any) {
-          console.error(`[loc-ref] Failed to generate reference for ${locName}:`, err.message);
-        }
-      }
-
-      res.json({ started: true, count: refs.length, refs });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  async function getAllReferenceUrlsForScene(projectId: string, scene: { context?: string | null; characters?: any; location?: string | null }): Promise<string[]> {
+  async function getCharacterReferenceUrlsForScene(projectId: string, scene: { context?: string | null; characters?: any }): Promise<string[]> {
     let charactersPresent: string[] = [];
     if (scene.context) {
       try {
@@ -1037,42 +879,17 @@ Write the script now. Output ONLY the script text, nothing else.`,
     if (charactersPresent.length === 0 && Array.isArray(scene.characters)) {
       charactersPresent = scene.characters;
     }
+    if (charactersPresent.length === 0) return [];
 
-    const charRefs = await storage.getCharacterReferencesByProject(projectId);
-    const completedCharRefs = charRefs.filter(r => r.status === "completed" && r.imageUrl);
-
-    const faceCloseups: string[] = [];
-    const fullBodies: string[] = [];
-    const profiles: string[] = [];
-
+    const refs = await storage.getCharacterReferencesByProject(projectId);
+    const urls: string[] = [];
     for (const charName of charactersPresent) {
-      const charMatches = completedCharRefs.filter(r => r.characterName.toLowerCase() === charName.toLowerCase());
-      for (const ref of charMatches) {
-        if (ref.angleType === "face_closeup" && ref.imageUrl) faceCloseups.push(ref.imageUrl);
-        else if (ref.angleType === "full_body" && ref.imageUrl) fullBodies.push(ref.imageUrl);
-        else if (ref.angleType === "profile" && ref.imageUrl) profiles.push(ref.imageUrl);
-        else if (ref.imageUrl) fullBodies.push(ref.imageUrl);
+      const ref = refs.find(r => r.status === "completed" && r.imageUrl && r.characterName.toLowerCase() === charName.toLowerCase());
+      if (ref && ref.imageUrl) {
+        urls.push(ref.imageUrl);
       }
     }
-
-    const locationRefs = await storage.getLocationReferencesByProject(projectId);
-    const locationUrls: string[] = [];
-    if (scene.location) {
-      const sceneLocation = scene.location.toLowerCase().trim();
-      for (const locRef of locationRefs) {
-        if (locRef.status === "completed" && locRef.imageUrl && locRef.locationName.toLowerCase().trim() === sceneLocation) {
-          locationUrls.push(locRef.imageUrl);
-        }
-      }
-    }
-
-    const prioritized = [...faceCloseups, ...fullBodies, ...locationUrls, ...profiles];
-    const MAX_REF_IMAGES = 4;
-    return prioritized.slice(0, MAX_REF_IMAGES);
-  }
-
-  async function getCharacterReferenceUrlsForScene(projectId: string, scene: { context?: string | null; characters?: any; location?: string | null }): Promise<string[]> {
-    return getAllReferenceUrlsForScene(projectId, scene);
+    return urls;
   }
 
   const storyBibleCache = new Map<string, StoryBible>();
@@ -1252,99 +1069,31 @@ Write the script now. Output ONLY the script text, nothing else.`,
             try {
               const existingRefs = await storage.getCharacterReferencesByProject(project.id);
               if (existingRefs.length === 0) {
-                console.log(`[auto-portraits] Generating multi-angle portraits for ${analysis.characters.length} characters in project ${project.id}`);
+                console.log(`[auto-portraits] Generating ${analysis.characters.length} character portraits for project ${project.id}`);
                 for (const char of analysis.characters) {
-                  const anglePrompts: { angleType: string; prompt: string }[] = [
-                    {
-                      angleType: "full_body",
-                      prompt: `Unreal Engine 5 cinematic 3D render, high-fidelity CGI character reference sheet with slight stylization — NOT a photograph, ultra-detailed, 16:9 widescreen. FULL BODY STANDING PORTRAIT of ${char.name} — showing head to feet, entire body visible. ${char.appearance}. ${char.signatureFeatures ? `SIGNATURE FEATURES: ${char.signatureFeatures}.` : ""} Shot type: full-body standing pose, feet visible at bottom of frame, head visible at top, the character is standing upright facing three-quarter angle toward camera with face clearly visible and direct eye contact. Arms relaxed at sides or in a natural at-ease pose. The ENTIRE body from head to boots/shoes must be visible — do NOT crop at waist or chest. Clean solid neutral dark gray background with soft cinematic studio lighting — bright key light from upper right at 45 degrees, cool fill from left, strong rim light outlining the full body silhouette. Expression: neutral-confident, conveying authority and presence. High-fidelity CGI skin with subsurface scattering, highly detailed facial features clearly visible, detailed fabric textures on clothing/uniform with every button, insignia, pocket and accessory rendered accurately, detailed hands and footwear. This is a CHARACTER REFERENCE IMAGE — the purpose is to establish exactly what this character looks like from head to toe for visual consistency in later scenes. Unreal Engine 5 quality render, NOT a real photograph. No text, no watermarks, no UI elements.`,
-                    },
-                    {
-                      angleType: "face_closeup",
-                      prompt: `Unreal Engine 5 cinematic 3D render, high-fidelity CGI extreme close-up portrait — NOT a photograph, ultra-detailed, 16:9 widescreen. EXTREME CLOSE-UP FACE PORTRAIT of ${char.name}. ${char.appearance}. ${char.signatureFeatures ? `SIGNATURE FEATURES: ${char.signatureFeatures}.` : ""} Shot type: tight face close-up filling the entire frame, front-facing, direct eye contact with camera. Every facial detail visible — skin pores, eye color and iris detail, eyebrow texture, lip texture, facial hair if any, scars or distinguishing marks. Clean solid neutral dark gray background with soft cinematic studio lighting — bright key light from upper right at 45 degrees creating subtle shadows on face, cool fill from left, rim light outlining jaw and cheekbone. Expression: neutral-intense, eyes conveying character depth. High-fidelity CGI skin with subsurface scattering, photorealistic eye reflections and moisture. This is a FACE REFERENCE IMAGE for visual consistency. Unreal Engine 5 quality render, NOT a real photograph. No text, no watermarks, no UI elements.`,
-                    },
-                    {
-                      angleType: "profile",
-                      prompt: `Unreal Engine 5 cinematic 3D render, high-fidelity CGI side profile portrait — NOT a photograph, ultra-detailed, 16:9 widescreen. SIDE PROFILE VIEW of ${char.name} — head and shoulders, showing the complete silhouette of nose, jaw, chin, ear, and forehead from a 90-degree side angle. ${char.appearance}. ${char.signatureFeatures ? `SIGNATURE FEATURES: ${char.signatureFeatures}.` : ""} Shot type: clean side profile, the character is looking to the left of frame, showing the full contour of their face and head shape. Hair, ear, and neck clearly visible. Clean solid neutral dark gray background with soft cinematic studio lighting — strong rim light outlining the full profile silhouette from behind, soft fill from front to reveal subtle facial detail. Expression: composed, neutral. High-fidelity CGI skin with subsurface scattering, detailed ear and hair texture. This is a PROFILE REFERENCE IMAGE for visual consistency across angles. Unreal Engine 5 quality render, NOT a real photograph. No text, no watermarks, no UI elements.`,
-                    },
-                  ];
-
-                  for (const { angleType, prompt } of anglePrompts) {
-                    try {
-                      const { taskId } = await generateImage(prompt);
-                      await storage.createCharacterReference({
-                        projectId: project.id,
-                        characterName: char.name,
-                        description: char.appearance,
-                        prompt,
-                        status: "generating",
-                        taskId,
-                        imageUrl: null,
-                        angleType,
-                      });
-                    } catch (portraitErr: any) {
-                      console.error(`[auto-portraits] Failed to generate ${angleType} portrait for ${char.name}:`, portraitErr.message);
-                    }
+                  const portraitPrompt = `Unreal Engine 5 cinematic 3D render, high-fidelity CGI character reference sheet with slight stylization — NOT a photograph, ultra-detailed, 16:9 widescreen. FULL BODY STANDING PORTRAIT of ${char.name} — showing head to feet, entire body visible. ${char.appearance}. ${char.signatureFeatures ? `SIGNATURE FEATURES: ${char.signatureFeatures}.` : ""} Shot type: full-body standing pose, feet visible at bottom of frame, head visible at top, the character is standing upright facing three-quarter angle toward camera with face clearly visible and direct eye contact. Arms relaxed at sides or in a natural at-ease pose. The ENTIRE body from head to boots/shoes must be visible — do NOT crop at waist or chest. Clean solid neutral dark gray background with soft cinematic studio lighting — bright key light from upper right at 45 degrees, cool fill from left, strong rim light outlining the full body silhouette. Expression: neutral-confident, conveying authority and presence. High-fidelity CGI skin with subsurface scattering, highly detailed facial features clearly visible, detailed fabric textures on clothing/uniform with every button, insignia, pocket and accessory rendered accurately, detailed hands and footwear. This is a CHARACTER REFERENCE IMAGE — the purpose is to establish exactly what this character looks like from head to toe for visual consistency in later scenes. Unreal Engine 5 quality render, NOT a real photograph. No text, no watermarks, no UI elements.`;
+                  try {
+                    const { taskId } = await generateImage(portraitPrompt);
+                    await storage.createCharacterReference({
+                      projectId: project.id,
+                      characterName: char.name,
+                      description: char.appearance,
+                      prompt: portraitPrompt,
+                      status: "generating",
+                      taskId,
+                      imageUrl: null,
+                    });
+                  } catch (portraitErr: any) {
+                    console.error(`[auto-portraits] Failed to generate portrait for ${char.name}:`, portraitErr.message);
                   }
                 }
-                console.log(`[auto-portraits] Multi-angle portrait generation initiated for project ${project.id}`);
+                console.log(`[auto-portraits] Character portrait generation initiated for project ${project.id}`);
               } else {
                 console.log(`[auto-portraits] Skipping — project ${project.id} already has ${existingRefs.length} character references`);
               }
             } catch (autoPortraitErr: any) {
               console.error(`[auto-portraits] Error during auto portrait generation:`, autoPortraitErr.message);
             }
-          }
-
-          try {
-            const existingLocRefs = await storage.getLocationReferencesByProject(project.id);
-            if (existingLocRefs.length === 0 && visualScenes.length > 0) {
-              const locationFreq = new Map<string, number>();
-              for (const vs of visualScenes) {
-                if (vs.location && vs.location !== "Unspecified") {
-                  const locKey = vs.location.trim();
-                  locationFreq.set(locKey, (locationFreq.get(locKey) || 0) + 1);
-                }
-              }
-              const topLocations = Array.from(locationFreq.entries())
-                .filter(([, count]) => count >= 2)
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 5);
-
-              if (topLocations.length > 0) {
-                console.log(`[auto-locations] Generating ${topLocations.length} location reference images for project ${project.id}`);
-                const locLookup = new Map<string, typeof analysis.locations[0]>();
-                for (const loc of analysis.locations) {
-                  locLookup.set(loc.name.toLowerCase(), loc);
-                }
-
-                for (const [locName, sceneCount] of topLocations) {
-                  const locData = locLookup.get(locName.toLowerCase());
-                  const visualDetails = locData?.visualDetails || "";
-                  const description = locData?.description || locName;
-
-                  const locPrompt = `Unreal Engine 5 cinematic 3D render, high-fidelity CGI establishing shot — NOT a photograph, ultra-detailed, 16:9 widescreen. WIDE ESTABLISHING SHOT of ${locName}. ${description}. ${visualDetails ? `VISUAL DETAILS: ${visualDetails}.` : ""} Shot type: wide cinematic establishing shot showing the full environment and architecture of this location. NO CHARACTERS OR PEOPLE in the scene — this is a pure environment/location reference. Rich atmospheric detail — volumetric lighting, atmospheric haze, environmental storytelling through objects and architecture. Clean cinematic composition following rule of thirds. ${analysis.visualStyle.lighting || "Dramatic cinematic lighting"}. ${analysis.visualStyle.atmosphere || ""}. Color palette: ${analysis.visualStyle.colorPalette || "cinematic"}. Time period: ${analysis.timePeriod || "modern"}. This is a LOCATION REFERENCE IMAGE — the purpose is to establish exactly what this environment looks like for visual consistency in later scenes. Unreal Engine 5 quality render, NOT a real photograph. No text, no watermarks, no UI elements.`;
-
-                  try {
-                    const { taskId } = await generateImage(locPrompt);
-                    await storage.createLocationReference({
-                      projectId: project.id,
-                      locationName: locName,
-                      description: `${description} (appears in ${sceneCount} scenes)`,
-                      prompt: locPrompt,
-                      status: "generating",
-                      taskId,
-                      imageUrl: null,
-                    });
-                  } catch (locErr: any) {
-                    console.error(`[auto-locations] Failed to generate reference for ${locName}:`, locErr.message);
-                  }
-                }
-                console.log(`[auto-locations] Location reference generation initiated for project ${project.id}`);
-              }
-            }
-          } catch (autoLocErr: any) {
-            console.error(`[auto-locations] Error during auto location reference generation:`, autoLocErr.message);
           }
         } catch (err: any) {
           console.error("Analysis error:", err);
@@ -1591,10 +1340,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
       const charRefs = await storage.getCharacterReferencesByProject(project.id);
       const completedCharRefs = charRefs.filter(r => r.status === "completed" && r.imageUrl);
-      const locationRefs = await storage.getLocationReferencesByProject(project.id);
-      const completedLocRefs = locationRefs.filter(r => r.status === "completed" && r.imageUrl);
 
-      const MAX_REF_IMAGES = 4;
       const sceneCharRefMap = new Map<string, string[]>();
       for (const job of allJobs) {
         let charactersPresent: string[] = [];
@@ -1607,37 +1353,17 @@ Write the script now. Output ONLY the script text, nothing else.`,
         if (charactersPresent.length === 0 && Array.isArray(job.scene.characters)) {
           charactersPresent = job.scene.characters as string[];
         }
-
-        const faceCloseups: string[] = [];
-        const fullBodies: string[] = [];
-        const profiles: string[] = [];
+        const urls: string[] = [];
         for (const charName of charactersPresent) {
-          const charMatches = completedCharRefs.filter(r => r.characterName.toLowerCase() === charName.toLowerCase());
-          for (const ref of charMatches) {
-            if (ref.angleType === "face_closeup" && ref.imageUrl) faceCloseups.push(ref.imageUrl);
-            else if (ref.angleType === "full_body" && ref.imageUrl) fullBodies.push(ref.imageUrl);
-            else if (ref.angleType === "profile" && ref.imageUrl) profiles.push(ref.imageUrl);
-            else if (ref.imageUrl) fullBodies.push(ref.imageUrl);
-          }
+          const ref = completedCharRefs.find(r => r.characterName.toLowerCase() === charName.toLowerCase());
+          if (ref && ref.imageUrl) urls.push(ref.imageUrl);
         }
-
-        const locUrls: string[] = [];
-        if (job.scene.location) {
-          const sceneLoc = (job.scene.location as string).toLowerCase().trim();
-          for (const locRef of completedLocRefs) {
-            if (locRef.locationName.toLowerCase().trim() === sceneLoc && locRef.imageUrl) {
-              locUrls.push(locRef.imageUrl);
-            }
-          }
-        }
-
-        const prioritized = [...faceCloseups, ...fullBodies, ...locUrls, ...profiles].slice(0, MAX_REF_IMAGES);
-        sceneCharRefMap.set(job.scene.id, prioritized);
+        sceneCharRefMap.set(job.scene.id, urls);
       }
 
-      if (completedCharRefs.length > 0 || completedLocRefs.length > 0) {
+      if (completedCharRefs.length > 0) {
         const scenesWithRefs = Array.from(sceneCharRefMap.values()).filter(u => u.length > 0).length;
-        console.log(`[generate-all] ${completedCharRefs.length} character refs + ${completedLocRefs.length} location refs available, ${scenesWithRefs}/${allJobs.length} scenes will use them`);
+        console.log(`[generate-all] ${completedCharRefs.length} character references available, ${scenesWithRefs}/${allJobs.length} scenes will use them`);
       }
 
       const imageQueue: Array<{ sceneId: string; projectId: string; variant: number; prompt: string; videoPrompt: string; charRefUrls: string[] }> = [];
@@ -1847,7 +1573,6 @@ Write the script now. Output ONLY the script text, nothing else.`,
           const WAVE_TIMEOUT = 10 * 60 * 1000;
           const wavePollStart = Date.now();
 
-          const pollErrors: Record<string, number> = {};
           while (Date.now() - wavePollStart < WAVE_TIMEOUT) {
             const allImages = await storage.getImagesByProject(project.id);
             const generating = allImages.filter(img => img.status === "generating" && img.taskId);
@@ -1880,16 +1605,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
                     } else if (result.status === "failed") {
                       await storage.updateImage(img.id, { status: "failed", error: result.error || "Image generation failed" });
                     }
-                  } catch (e: any) {
-                    const errKey = img.taskId || img.id.toString();
-                    pollErrors[errKey] = (pollErrors[errKey] || 0) + 1;
-                    if (pollErrors[errKey] >= 5) {
-                      console.error(`[generate-all] Task ${errKey} failed after 5 poll errors: ${e.message}`);
-                      await storage.updateImage(img.id, { status: "failed", error: `Poll error: ${e.message}` });
-                    } else {
-                      console.warn(`[generate-all] Poll error for task ${errKey}: ${e.message}`);
-                    }
-                  }
+                  } catch (e) {}
                 })
               );
             }
@@ -2276,7 +1992,6 @@ Write the script now. Output ONLY the script text, nothing else.`,
           const WAVE_TIMEOUT = 10 * 60 * 1000;
           const wavePollStart = Date.now();
 
-          const retryPollErrors: Record<string, number> = {};
           while (Date.now() - wavePollStart < WAVE_TIMEOUT) {
             const currentAllImages = await storage.getImagesByProject(project.id);
             const generating = currentAllImages.filter(img => img.status === "generating" && img.taskId);
@@ -2307,18 +2022,9 @@ Write the script now. Output ONLY the script text, nothing else.`,
                     if (result.status === "completed" && result.imageUrl) {
                       await storage.updateImage(img.id, { status: "completed", imageUrl: result.imageUrl });
                     } else if (result.status === "failed") {
-                      await storage.updateImage(img.id, { status: "failed", error: result.error || "Image generation failed" });
+                      await storage.updateImage(img.id, { status: "failed" });
                     }
-                  } catch (e: any) {
-                    const errKey = img.taskId || img.id.toString();
-                    retryPollErrors[errKey] = (retryPollErrors[errKey] || 0) + 1;
-                    if (retryPollErrors[errKey] >= 5) {
-                      console.error(`[retry-failed] Task ${errKey} failed after 5 poll errors: ${e.message}`);
-                      await storage.updateImage(img.id, { status: "failed", error: `Poll error: ${e.message}` });
-                    } else {
-                      console.warn(`[retry-failed] Poll error for task ${errKey}: ${e.message}`);
-                    }
-                  }
+                  } catch (e) {}
                 })
               );
             }
@@ -2503,157 +2209,6 @@ Write the script now. Output ONLY the script text, nothing else.`,
   app.get("/api/image-models", (_req, res) => {
     res.json(Object.values(IMAGE_MODELS));
   });
-
-  app.get("/api/settings/api-keys", async (_req, res) => {
-    try {
-      const settings = await storage.getAllApiSettings();
-      const masked = settings.map(s => ({
-        serviceName: s.serviceName,
-        hasKey: true,
-        maskedKey: s.apiKey.length > 8
-          ? s.apiKey.slice(0, 4) + "•".repeat(Math.min(s.apiKey.length - 8, 20)) + s.apiKey.slice(-4)
-          : "••••••••",
-        updatedAt: s.updatedAt,
-      }));
-
-      const allServices = ["anthropic", "evolink", "elevenlabs"];
-      const result = allServices.map(name => {
-        const existing = masked.find(m => m.serviceName === name);
-        if (existing) return existing;
-        const envMap: Record<string, string | undefined> = {
-          anthropic: process.env.ANTHROPIC_API_KEY,
-          evolink: process.env.NANOBANANA_API_KEY,
-          elevenlabs: process.env.ELEVENLABS_API_KEY,
-        };
-        const envKey = envMap[name];
-        return {
-          serviceName: name,
-          hasKey: !!envKey,
-          maskedKey: envKey
-            ? envKey.slice(0, 4) + "•".repeat(Math.min(envKey.length - 8, 20)) + envKey.slice(-4)
-            : null,
-          updatedAt: null,
-          source: "environment",
-        };
-      });
-
-      res.json(result);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.post("/api/settings/api-keys", async (req, res) => {
-    try {
-      const { serviceName, apiKey } = req.body;
-      if (!serviceName || !apiKey) {
-        return res.status(400).json({ error: "serviceName and apiKey are required" });
-      }
-
-      const validServices = ["anthropic", "evolink", "elevenlabs"];
-      if (!validServices.includes(serviceName)) {
-        return res.status(400).json({ error: `Invalid service. Must be one of: ${validServices.join(", ")}` });
-      }
-
-      await storage.upsertApiSetting(serviceName, apiKey.trim());
-      clearKeyCache(serviceName);
-
-      res.json({ success: true, serviceName });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.delete("/api/settings/api-keys/:serviceName", async (req, res) => {
-    try {
-      const { serviceName } = req.params;
-      await storage.deleteApiSetting(serviceName);
-      clearKeyCache(serviceName);
-      res.json({ success: true, serviceName });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.post("/api/settings/api-keys/test", async (req, res) => {
-    try {
-      const { serviceName, apiKey } = req.body;
-      if (!serviceName || !apiKey) {
-        return res.status(400).json({ error: "serviceName and apiKey are required" });
-      }
-
-      let valid = false;
-      let message = "";
-
-      if (serviceName === "anthropic") {
-        try {
-          const client = new Anthropic({ apiKey: apiKey.trim() });
-          await client.messages.create({
-            model: "claude-sonnet-4-20250514",
-            max_tokens: 10,
-            messages: [{ role: "user", content: "Say OK" }],
-          });
-          valid = true;
-          message = "Anthropic API key is valid";
-        } catch (err: any) {
-          message = err.message || "Invalid Anthropic API key";
-        }
-      } else if (serviceName === "evolink") {
-        try {
-          const testRes = await fetch(`${API_BASE_URL}/images/generations`, {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${apiKey.trim()}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              model: "nanobanana",
-              prompt: "test",
-              size: "1:1",
-              quality: "standard",
-            }),
-          });
-          if (testRes.status === 401 || testRes.status === 403) {
-            message = "Invalid EvoLink API key";
-          } else if (testRes.ok || testRes.status === 200 || testRes.status === 201) {
-            valid = true;
-            message = "EvoLink API key is valid";
-          } else {
-            const errData = await testRes.json().catch(() => ({}));
-            const errCode = errData?.error?.code || "";
-            if (errCode === "invalid_api_key") {
-              message = "Invalid EvoLink API key";
-            } else {
-              valid = true;
-              message = "EvoLink API key accepted (connection successful)";
-            }
-          }
-        } catch (err: any) {
-          message = err.message || "Could not verify EvoLink API key";
-        }
-      } else if (serviceName === "elevenlabs") {
-        try {
-          const testRes = await fetch("https://api.elevenlabs.io/v1/user", {
-            headers: { "xi-api-key": apiKey.trim() },
-          });
-          if (testRes.ok) {
-            valid = true;
-            message = "ElevenLabs API key is valid";
-          } else {
-            message = "Invalid ElevenLabs API key";
-          }
-        } catch (err: any) {
-          message = err.message || "Could not verify ElevenLabs API key";
-        }
-      }
-
-      res.json({ valid, message });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  const API_BASE_URL = "https://api.evolink.ai/v1";
 
   app.post("/api/projects/:id/animate-all-videos", async (req, res) => {
     try {

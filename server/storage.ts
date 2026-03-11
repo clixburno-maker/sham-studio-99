@@ -4,13 +4,11 @@ import {
   type Scene, type InsertScene,
   type GeneratedImage, type InsertImage,
   type CharacterReference, type InsertCharacterReference,
-  type LocationReference, type InsertLocationReference,
   type Niche, type InsertNiche,
   type NicheVideo, type InsertNicheVideo,
   type SavedScript, type InsertSavedScript,
   type CustomVoice, type InsertCustomVoice,
-  type ApiSetting, type InsertApiSetting,
-  users, projects, scenes, generatedImages, characterReferences, locationReferences, niches, nicheVideos, savedScripts, customVoices, apiSettings,
+  users, projects, scenes, generatedImages, characterReferences, niches, nicheVideos, savedScripts, customVoices,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
@@ -48,12 +46,6 @@ export interface IStorage {
   updateCharacterReference(id: string, data: Partial<CharacterReference>): Promise<CharacterReference>;
   deleteCharacterReferencesByProject(projectId: string): Promise<void>;
 
-  getLocationReferencesByProject(projectId: string): Promise<LocationReference[]>;
-  getLocationReference(id: string): Promise<LocationReference | undefined>;
-  createLocationReference(ref: InsertLocationReference): Promise<LocationReference>;
-  updateLocationReference(id: string, data: Partial<LocationReference>): Promise<LocationReference>;
-  deleteLocationReferencesByProject(projectId: string): Promise<void>;
-
   getNiches(): Promise<Niche[]>;
   getNiche(id: string): Promise<Niche | undefined>;
   createNiche(niche: InsertNiche): Promise<Niche>;
@@ -73,11 +65,6 @@ export interface IStorage {
   getCustomVoices(): Promise<CustomVoice[]>;
   createCustomVoice(voice: InsertCustomVoice): Promise<CustomVoice>;
   deleteCustomVoice(id: string): Promise<void>;
-
-  getAllApiSettings(): Promise<ApiSetting[]>;
-  getApiSetting(serviceName: string): Promise<ApiSetting | undefined>;
-  upsertApiSetting(serviceName: string, apiKey: string): Promise<ApiSetting>;
-  deleteApiSetting(serviceName: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -183,7 +170,6 @@ export class DatabaseStorage implements IStorage {
     await db.delete(generatedImages).where(eq(generatedImages.projectId, id));
     await db.delete(scenes).where(eq(scenes.projectId, id));
     await db.delete(characterReferences).where(eq(characterReferences.projectId, id));
-    await db.delete(locationReferences).where(eq(locationReferences.projectId, id));
     await db.delete(projects).where(eq(projects.id, id));
   }
 
@@ -208,29 +194,6 @@ export class DatabaseStorage implements IStorage {
 
   async deleteCharacterReferencesByProject(projectId: string): Promise<void> {
     await db.delete(characterReferences).where(eq(characterReferences.projectId, projectId));
-  }
-
-  async getLocationReferencesByProject(projectId: string): Promise<LocationReference[]> {
-    return db.select().from(locationReferences).where(eq(locationReferences.projectId, projectId));
-  }
-
-  async getLocationReference(id: string): Promise<LocationReference | undefined> {
-    const [ref] = await db.select().from(locationReferences).where(eq(locationReferences.id, id));
-    return ref;
-  }
-
-  async createLocationReference(ref: InsertLocationReference): Promise<LocationReference> {
-    const [created] = await db.insert(locationReferences).values(ref).returning();
-    return created;
-  }
-
-  async updateLocationReference(id: string, data: Partial<LocationReference>): Promise<LocationReference> {
-    const [updated] = await db.update(locationReferences).set(data).where(eq(locationReferences.id, id)).returning();
-    return updated;
-  }
-
-  async deleteLocationReferencesByProject(projectId: string): Promise<void> {
-    await db.delete(locationReferences).where(eq(locationReferences.projectId, projectId));
   }
 
   async getNiches(): Promise<Niche[]> {
@@ -304,34 +267,6 @@ export class DatabaseStorage implements IStorage {
 
   async deleteCustomVoice(id: string): Promise<void> {
     await db.delete(customVoices).where(eq(customVoices.id, id));
-  }
-
-  async getAllApiSettings(): Promise<ApiSetting[]> {
-    return db.select().from(apiSettings);
-  }
-
-  async getApiSetting(serviceName: string): Promise<ApiSetting | undefined> {
-    const [setting] = await db.select().from(apiSettings).where(eq(apiSettings.serviceName, serviceName));
-    return setting;
-  }
-
-  async upsertApiSetting(serviceName: string, apiKey: string): Promise<ApiSetting> {
-    const existing = await this.getApiSetting(serviceName);
-    if (existing) {
-      const [updated] = await db.update(apiSettings)
-        .set({ apiKey, updatedAt: new Date().toISOString() })
-        .where(eq(apiSettings.serviceName, serviceName))
-        .returning();
-      return updated;
-    }
-    const [created] = await db.insert(apiSettings)
-      .values({ serviceName, apiKey })
-      .returning();
-    return created;
-  }
-
-  async deleteApiSetting(serviceName: string): Promise<void> {
-    await db.delete(apiSettings).where(eq(apiSettings.serviceName, serviceName));
   }
 }
 

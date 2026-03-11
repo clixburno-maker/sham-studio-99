@@ -3,13 +3,8 @@ import * as path from "path";
 import { randomUUID } from "crypto";
 import sharp from "sharp";
 
-import { getApiKey } from "./api-keys";
-
 const API_BASE = "https://api.evolink.ai/v1";
-
-async function getEvolinkKey(): Promise<string | undefined> {
-  return getApiKey("evolink");
-}
+const API_KEY = process.env.NANOBANANA_API_KEY;
 const LTX_API_KEY = process.env.LTX_API_KEY;
 const LTX_API_BASE = "https://api.ltx.video/v1";
 
@@ -146,9 +141,8 @@ export function getImageModelConfig(modelId?: string | null): ImageModelConfig {
 }
 
 export async function generateImage(prompt: string, referenceImageUrls?: string[], imageModelId?: ImageModelId): Promise<{ taskId: string }> {
-  const API_KEY = await getEvolinkKey();
   if (!API_KEY) {
-    throw new Error("EvoLink API key is not configured. Please add it in Settings or Secrets.");
+    throw new Error("NANOBANANA_API_KEY is not configured. Please add your EvoLink API key in Secrets.");
   }
 
   const model = getImageModelConfig(imageModelId);
@@ -459,9 +453,8 @@ export async function generateVideo(imageUrl: string, prompt: string, modelId?: 
     return { taskId: `ltx-sync-${randomUUID()}`, videoUrl: result.videoUrl };
   }
 
-  const API_KEY = await getEvolinkKey();
   if (!API_KEY) {
-    throw new Error("EvoLink API key is not configured. Please add it in Settings or Secrets.");
+    throw new Error("NANOBANANA_API_KEY is not configured. Please add your EvoLink API key in Secrets.");
   }
 
   const model = getVideoModelConfig(modelId);
@@ -566,9 +559,8 @@ export async function checkVideoStatus(taskId: string): Promise<{
   progress: number;
   error?: string;
 }> {
-  const API_KEY = await getEvolinkKey();
   if (!API_KEY) {
-    throw new Error("EvoLink API key is not configured. Please add it in Settings or Secrets.");
+    throw new Error("NANOBANANA_API_KEY is not configured");
   }
 
   const response = await fetch(`${API_BASE}/tasks/${taskId}`, {
@@ -618,9 +610,8 @@ export async function checkImageStatus(taskId: string): Promise<{
   progress: number;
   error?: string;
 }> {
-  const API_KEY = await getEvolinkKey();
   if (!API_KEY) {
-    throw new Error("EvoLink API key is not configured. Please add it in Settings or Secrets.");
+    throw new Error("NANOBANANA_API_KEY is not configured");
   }
 
   const response = await fetch(`${API_BASE}/tasks/${taskId}`, {

@@ -127,27 +127,11 @@ export const characterReferences = pgTable("character_references", {
   imageUrl: text("image_url"),
   status: text("status").notNull().default("pending"),
   taskId: text("task_id"),
-  angleType: text("angle_type").notNull().default("full_body"),
 });
 
 export const insertCharacterReferenceSchema = createInsertSchema(characterReferences).omit({ id: true });
 export type InsertCharacterReference = z.infer<typeof insertCharacterReferenceSchema>;
 export type CharacterReference = typeof characterReferences.$inferSelect;
-
-export const locationReferences = pgTable("location_references", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull(),
-  locationName: text("location_name").notNull(),
-  description: text("description").notNull(),
-  prompt: text("prompt").notNull(),
-  imageUrl: text("image_url"),
-  status: text("status").notNull().default("pending"),
-  taskId: text("task_id"),
-});
-
-export const insertLocationReferenceSchema = createInsertSchema(locationReferences).omit({ id: true });
-export type InsertLocationReference = z.infer<typeof insertLocationReferenceSchema>;
-export type LocationReference = typeof locationReferences.$inferSelect;
 
 export const niches = pgTable("niches", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -209,17 +193,6 @@ export const customVoices = pgTable("custom_voices", {
 export const insertCustomVoiceSchema = createInsertSchema(customVoices).omit({ id: true, createdAt: true });
 export type InsertCustomVoice = z.infer<typeof insertCustomVoiceSchema>;
 export type CustomVoice = typeof customVoices.$inferSelect;
-
-export const apiSettings = pgTable("api_settings", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  serviceName: text("service_name").notNull().unique(),
-  apiKey: text("api_key").notNull(),
-  updatedAt: text("updated_at").default(sql`now()::text`),
-});
-
-export const insertApiSettingSchema = createInsertSchema(apiSettings).omit({ id: true, updatedAt: true });
-export type InsertApiSetting = z.infer<typeof insertApiSettingSchema>;
-export type ApiSetting = typeof apiSettings.$inferSelect;
 
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

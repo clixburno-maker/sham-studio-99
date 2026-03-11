@@ -1,18 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { ScriptAnalysis } from "@shared/schema";
-import { getApiKey } from "./api-keys";
 
-let _anthropicClient: Anthropic | null = null;
-let _lastAnthropicKey: string | undefined;
-
-async function getAnthropicClient(): Promise<Anthropic> {
-  const key = await getApiKey("anthropic");
-  if (key !== _lastAnthropicKey || !_anthropicClient) {
-    _lastAnthropicKey = key;
-    _anthropicClient = new Anthropic({ apiKey: key });
-  }
-  return _anthropicClient;
-}
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
 
 export interface StoryBible {
   analysis: ScriptAnalysis;
@@ -499,7 +490,7 @@ function validateAndFillSentenceCoverage(
 }
 
 async function analyzeStoryBibleOnly(script: string): Promise<StoryBible> {
-  const stream = (await getAnthropicClient()).messages.stream({
+  const stream = anthropic.messages.stream({
     model: "claude-opus-4-6",
     max_tokens: 128000,
     messages: [
@@ -665,7 +656,7 @@ async function analyzeVisualScenesChunk(
     `${l.name}: ${l.description}. Visual Fingerprint: ${l.signatureFeatures || "See visual details"}`
   ).join("\n");
 
-  const stream = (await getAnthropicClient()).messages.stream({
+  const stream = anthropic.messages.stream({
     model: "claude-opus-4-6",
     max_tokens: 128000,
     messages: [
@@ -869,7 +860,7 @@ export async function analyzeFullStory(
 
   onProgress?.("AI is reading your entire script to understand the full story...", 1, 4);
 
-  const stream = (await getAnthropicClient()).messages.stream({
+  const stream = anthropic.messages.stream({
     model: "claude-opus-4-6",
     max_tokens: 128000,
     messages: [
@@ -1193,7 +1184,7 @@ Mood: ${nextScene.mood}
 The last image of THIS scene should visually bridge toward the next scene.`
     : "This is the FINAL scene of the story — end with visual closure and emotional resolution.";
 
-  const stream = (await getAnthropicClient()).messages.stream({
+  const stream = anthropic.messages.stream({
     model: "claude-opus-4-6",
     max_tokens: 128000,
     messages: [
@@ -1511,7 +1502,7 @@ export async function analyzeAndImprovePrompt(
     (l: any) => `═══ LOCATION: ${l.name} ═══\nVISUAL DNA: ${l.visualDetails}\n${l.signatureFeatures ? `LOCATION FINGERPRINT: ${l.signatureFeatures}` : ""}`
   ).join("\n\n") || "";
 
-  const stream = (await getAnthropicClient()).messages.stream({
+  const stream = anthropic.messages.stream({
     model: "claude-opus-4-6",
     max_tokens: 128000,
     messages: [
@@ -1593,7 +1584,7 @@ export async function applyFeedbackToPrompt(
   userFeedback: string,
   isCharacterPortrait: boolean,
 ): Promise<string> {
-  const stream = (await getAnthropicClient()).messages.stream({
+  const stream = anthropic.messages.stream({
     model: "claude-opus-4-6",
     max_tokens: 8192,
     messages: [
@@ -1658,7 +1649,7 @@ export async function generateSmartMotionPrompt(
 
   const imageContext = imagePrompt.substring(0, 800);
 
-  const stream = (await getAnthropicClient()).messages.stream({
+  const stream = anthropic.messages.stream({
     model: "claude-sonnet-4-20250514",
     max_tokens: 200,
     messages: [

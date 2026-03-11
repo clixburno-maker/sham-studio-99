@@ -13,8 +13,7 @@ import ProjectView from "@/pages/project-view";
 import NichesPage from "@/pages/niches";
 import SavedScriptsPage from "@/pages/saved-scripts";
 import VoiceoverPage from "@/pages/voiceover";
-import SettingsPage from "@/pages/settings";
-import { Film, Settings2 } from "lucide-react";
+import { Film } from "lucide-react";
 import { Link } from "wouter";
 
 function Router() {
@@ -26,7 +25,6 @@ function Router() {
       <Route path="/niches" component={NichesPage} />
       <Route path="/scripts" component={SavedScriptsPage} />
       <Route path="/voiceover" component={VoiceoverPage} />
-      <Route path="/settings" component={SettingsPage} />
       <Route path="/project/:id" component={ProjectView} />
       <Route component={NotFound} />
     </Switch>
@@ -49,14 +47,7 @@ function App() {
                     <span className="font-bold text-sm tracking-tight gradient-text">Video Production - YT</span>
                   </div>
                 </Link>
-                <div className="flex items-center gap-2">
-                  <Link href="/settings">
-                    <button className="p-2 rounded-xl hover:bg-white/5 transition-colors text-muted-foreground hover:text-foreground" title="API Settings">
-                      <Settings2 className="w-4 h-4" />
-                    </button>
-                  </Link>
-                  <ThemeToggle />
-                </div>
+                <ThemeToggle />
               </div>
             </header>
             <main className="min-h-[calc(100vh-3.5rem)]">
