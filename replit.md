@@ -76,7 +76,10 @@ Once a project exists, the system analyzes the script using Claude Opus 4.6, bui
 5. **Character Reference Portraits**: Multi-angle reference portrait images (front, 3/4, profile) for visual consistency
 6. **Total Visual Consistency with Identity Anchoring**: ALL element descriptions copied word-for-word into every prompt
 7. **Prompt Quality**: No word limit, 800-2,000+ words per prompt
-8. **AI-Powered Motion Prompts**: Intelligent motion prompts for video generation
+8. **AI-Powered Motion Prompts**: Three-layer motion prompt system designed for image-to-video AI limitations:
+   - Layer 1: Analysis-time motion prompts with anti-morphing rules and subject identity preservation
+   - Layer 2: `generateSmartMotionPrompt()` — Claude-powered refinement at video generation time with subject identity locking, anti-morphing constraints, and model-aware motion guidance
+   - Layer 3: `buildVideoPrompt()` — fallback with automatic subject-type detection (aircraft/vehicle/vessel) and consistency anchoring
 
 ## Scene Data
 - `scene.promptBase` - JSON string array of 2-10 image prompts (variable per scene)

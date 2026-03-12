@@ -21,11 +21,27 @@ function stripDialogue(text: string): string {
   return cleaned;
 }
 
-function buildVideoPrompt(motionPrompt: string | null | undefined, _imagePrompt: string): string {
+function buildVideoPrompt(motionPrompt: string | null | undefined, imagePrompt: string): string {
   if (motionPrompt) {
-    return stripDialogue(motionPrompt);
+    const cleaned = stripDialogue(motionPrompt);
+    return `${cleaned} Maintain exact subject appearance and design throughout. Gentle continuous motion only, no morphing or transformation.`;
   }
-  return "Slow cinematic push-in, subtle subject movement and natural breathing, atmospheric haze drifts gently through frame.";
+  const subjectHint = extractSubjectHint(imagePrompt);
+  return `${subjectHint}Slow cinematic push-in with steady framing. Subtle natural motion — gentle atmospheric movement, soft light shifts. Maintain exact subject design and proportions throughout, no morphing or shape changes.`;
+}
+
+function extractSubjectHint(imagePrompt: string): string {
+  const lower = imagePrompt.toLowerCase();
+  if (lower.includes("aircraft") || lower.includes("fighter") || lower.includes("bomber") || lower.includes("plane") || lower.includes("jet") || lower.includes("mustang") || lower.includes("spitfire") || lower.includes("messerschmitt") || lower.includes("p-51") || lower.includes("p-47") || lower.includes("f4u") || lower.includes("b-17") || lower.includes("b-29") || lower.includes("zero") || lower.includes("corsair")) {
+    return "Aircraft maintains exact design, wing shape, and markings throughout. ";
+  }
+  if (lower.includes("ship") || lower.includes("carrier") || lower.includes("destroyer") || lower.includes("battleship") || lower.includes("submarine") || lower.includes("vessel") || lower.includes("cruiser")) {
+    return "Vessel maintains exact hull shape and superstructure throughout. ";
+  }
+  if (lower.includes("tank") || lower.includes("vehicle") || lower.includes("truck") || lower.includes("jeep") || lower.includes("halftrack")) {
+    return "Vehicle maintains exact design and proportions throughout. ";
+  }
+  return "";
 }
 
 export async function registerRoutes(
@@ -2391,6 +2407,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
                 img.videoPrompt,
                 videoDuration || model.duration,
                 storyBible,
+                videoModel,
               );
             } catch (aiErr: any) {
               console.warn(`[animate-all-videos] AI motion prompt failed for image ${img.id}, using fallback`);
@@ -2489,6 +2506,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
               img.videoPrompt,
               videoDuration || model.duration,
               storyBible,
+              videoModel,
             );
           } catch (aiErr: any) {
             console.warn(`[animate-all] AI motion prompt failed for image ${img.id}, using fallback: ${aiErr.message}`);
@@ -2566,6 +2584,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
           img.videoPrompt,
           effectiveDuration,
           storyBible,
+          videoModel,
         );
         console.log(`[video-gen] AI motion prompt generated: ${videoPromptFinal.substring(0, 200)}...`);
       } catch (aiErr: any) {
@@ -2637,7 +2656,8 @@ Write the script now. Output ONLY the script text, nothing else.`,
           const newRetryCount = retryCount + 1;
           console.log(`[video-gen] Auto-retrying ${img.videoModel} for image ${img.id} (attempt ${newRetryCount}/5): ${errorMsg}`);
           try {
-            const retryResult = await generateVideo(img.imageUrl, img.videoPromptSent || "Cinematic slow camera motion with gentle atmospheric movement.", img.videoModel as any);
+            const retryPrompt = img.videoPromptSent || buildVideoPrompt(img.videoPrompt, img.prompt);
+            const retryResult = await generateVideo(img.imageUrl, retryPrompt, img.videoModel as any);
             if (retryResult.videoUrl) {
               const updated = await storage.updateImage(img.id, {
                 videoStatus: "completed",
@@ -2696,7 +2716,8 @@ Write the script now. Output ONLY the script text, nothing else.`,
               const newRetryCount = retryCount + 1;
               console.log(`[video-gen] Auto-retrying ${img.videoModel} for image ${img.id} (poll-videos, attempt ${newRetryCount}/5): ${errorMsg}`);
               try {
-                const retryResult = await generateVideo(img.imageUrl, img.videoPromptSent || "Cinematic slow camera motion with gentle atmospheric movement.", img.videoModel as any);
+                const retryPrompt = img.videoPromptSent || buildVideoPrompt(img.videoPrompt, img.prompt);
+                const retryResult = await generateVideo(img.imageUrl, retryPrompt, img.videoModel as any);
                 if (retryResult.videoUrl) {
                   await storage.updateImage(img.id, {
                     videoStatus: "completed",
