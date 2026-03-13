@@ -3261,6 +3261,9 @@ function ClipsView({
                         src={proxyUrl(img.videoUrl)}
                         autoPlay
                         loop
+                        muted
+                        playsInline
+                        preload="auto"
                         className="w-full h-full object-contain"
                         data-testid={`video-clip-${img.id}`}
                       />
@@ -3468,6 +3471,9 @@ function Lightbox({
             controls
             autoPlay
             loop
+            muted
+            playsInline
+            preload="auto"
             className="max-h-[75vh] w-auto max-w-full rounded-2xl shadow-2xl ring-1 ring-white/[0.06]"
             data-testid="video-lightbox"
           />

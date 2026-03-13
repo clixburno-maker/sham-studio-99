@@ -3183,17 +3183,29 @@ Write the script now. Output ONLY the script text, nothing else.`,
         return res.status(403).json({ error: "Domain not allowed" });
       }
 
-      const upstream = await fetch(url, {
-        headers: { "User-Agent": "ScriptVision/1.0" },
-      });
-      if (!upstream.ok) {
+      const upstreamHeaders: Record<string, string> = { "User-Agent": "ScriptVision/1.0" };
+      if (req.headers.range) {
+        upstreamHeaders["Range"] = req.headers.range;
+      }
+
+      const upstream = await fetch(url, { headers: upstreamHeaders });
+      if (!upstream.ok && upstream.status !== 206) {
         return res.status(upstream.status).json({ error: "Upstream fetch failed" });
       }
+
       const contentType = upstream.headers.get("content-type");
       const contentLength = upstream.headers.get("content-length");
+      const contentRange = upstream.headers.get("content-range");
+      const acceptRanges = upstream.headers.get("accept-ranges");
+
       if (contentType) res.setHeader("Content-Type", contentType);
       if (contentLength) res.setHeader("Content-Length", contentLength);
+      if (contentRange) res.setHeader("Content-Range", contentRange);
+      if (acceptRanges) res.setHeader("Accept-Ranges", acceptRanges);
+      else res.setHeader("Accept-Ranges", "bytes");
       res.setHeader("Cache-Control", "public, max-age=86400");
+
+      res.status(upstream.status);
       
       if (upstream.body) {
         const reader = upstream.body.getReader();
@@ -3201,7 +3213,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
           while (true) {
             const { done, value } = await reader.read();
             if (done) { res.end(); return; }
-            res.write(Buffer.from(value));
+            if (!res.writableEnded) res.write(Buffer.from(value));
           }
         };
         await pump();
@@ -3211,7 +3223,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
       }
     } catch (err: any) {
       console.error("Proxy media error:", err.message);
-      res.status(500).json({ error: "Proxy error" });
+      if (!res.headersSent) res.status(500).json({ error: "Proxy error" });
     }
   });
 
