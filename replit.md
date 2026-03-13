@@ -110,6 +110,8 @@ Once a project exists, the system analyzes the script using Claude Opus 4.6, bui
 - `POST /api/projects/:id/scenes/:sceneId/regenerate-with-consistency` - Regenerate all scene images using character portraits
 - `POST /api/projects/:id/scenes/:sceneId/animate-all` - Generate videos for all images in a scene
 - `POST /api/projects/:id/images/:imageId/generate-video` - Create video from image
+- `POST /api/projects/:id/images/:imageId/regenerate-video-with-feedback` - Regenerate video with motion feedback
+- `POST /api/projects/:id/scenes/:sceneId/regenerate-videos-with-feedback` - Regenerate all scene videos with motion feedback
 - `POST /api/images/:imageId/check-video` - Check video generation status
 - `POST /api/projects/:id/poll-videos` - Poll all video generation status
 - `GET /api/image-models` - List image generation models with pricing

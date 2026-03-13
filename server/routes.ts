@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { analyzeFullStory, generateSequencePrompts, analyzeAndImprovePrompt, applyFeedbackToPrompt, generateSmartMotionPrompt, type VisualScene, type StoryBible } from "./ai-analyzer";
+import { analyzeFullStory, generateSequencePrompts, analyzeAndImprovePrompt, applyFeedbackToPrompt, generateSmartMotionPrompt, generateMotionPromptWithFeedback, type VisualScene, type StoryBible } from "./ai-analyzer";
 import { generateImage, checkImageStatus, generateVideo, checkVideoStatus, VIDEO_MODELS, getVideoModelConfig, IMAGE_MODELS, getImageModelConfig, type VideoModelId, type ImageModelId } from "./nanobanana";
 import { insertProjectSchema, insertNicheSchema, type ScriptAnalysis } from "@shared/schema";
 import { extractChannelTranscripts, extractSelectedVideoTranscripts, getChannelVideos } from "./youtube";
@@ -2623,6 +2623,194 @@ Write the script now. Output ONLY the script text, nothing else.`,
           videoError: err.message,
         });
       }
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/projects/:id/images/:imageId/regenerate-video-with-feedback", async (req, res) => {
+    try {
+      const { feedback, videoModel: requestedModel, videoDuration: requestedDuration } = req.body || {};
+      if (!feedback || typeof feedback !== "string" || feedback.trim().length === 0) {
+        return res.status(400).json({ error: "Feedback text is required" });
+      }
+
+      const videoModel: VideoModelId = (requestedModel as VideoModelId) || "grok";
+      const videoDuration = requestedDuration ? parseInt(requestedDuration) : undefined;
+      const modelConfig = getVideoModelConfig(videoModel);
+
+      const img = await storage.getImageById(req.params.imageId);
+      if (!img) return res.status(404).json({ error: "Image not found" });
+      if (img.projectId !== req.params.id) return res.status(400).json({ error: "Image does not belong to this project" });
+      if (img.status !== "completed" || !img.imageUrl) {
+        return res.status(400).json({ error: "Image must be completed before creating a video" });
+      }
+
+      const scene = await storage.getScene(img.sceneId);
+      const storyBible = storyBibleCache.get(req.params.id) || null;
+
+      let shotLabel = `Shot ${img.variant}`;
+      try {
+        if (scene?.shotLabels) {
+          const labels = JSON.parse(scene.shotLabels);
+          if (labels[img.variant - 1]) shotLabel = labels[img.variant - 1];
+        }
+      } catch {}
+
+      const effectiveDuration = videoDuration || modelConfig.duration;
+      const previousPrompt = img.videoPromptSent || img.videoPrompt || "Cinematic slow motion";
+
+      console.log(`[video-regen-feedback] Generating feedback-aware motion prompt for image ${img.id}: "${feedback.substring(0, 100)}"`);
+
+      let videoPromptFinal: string;
+      try {
+        videoPromptFinal = await generateMotionPromptWithFeedback(
+          img.prompt,
+          scene?.sceneDescription || scene?.sentence || "",
+          shotLabel,
+          scene?.mood || "cinematic",
+          previousPrompt,
+          feedback.trim(),
+          effectiveDuration,
+          storyBible,
+          videoModel,
+        );
+        console.log(`[video-regen-feedback] New motion prompt: ${videoPromptFinal.substring(0, 200)}`);
+      } catch (aiErr: any) {
+        console.warn(`[video-regen-feedback] AI prompt generation failed, using fallback: ${aiErr.message}`);
+        videoPromptFinal = buildVideoPrompt(img.videoPrompt, img.prompt);
+      }
+
+      const result = await generateVideo(img.imageUrl, videoPromptFinal, videoModel, videoDuration);
+      if (result.videoUrl) {
+        const updated = await storage.updateImage(img.id, {
+          videoStatus: "completed",
+          videoTaskId: result.taskId,
+          videoUrl: result.videoUrl,
+          videoModel: videoModel,
+          videoPromptSent: videoPromptFinal,
+          videoError: null,
+        });
+        res.json(updated);
+      } else {
+        const updated = await storage.updateImage(img.id, {
+          videoStatus: "generating",
+          videoTaskId: result.taskId,
+          videoUrl: null,
+          videoModel: videoModel,
+          videoPromptSent: videoPromptFinal,
+          videoError: null,
+        });
+        res.json(updated);
+      }
+    } catch (err: any) {
+      console.error("Video regeneration with feedback error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/projects/:id/scenes/:sceneId/regenerate-videos-with-feedback", async (req, res) => {
+    try {
+      const { feedback, videoModel: requestedModel, videoDuration: requestedDuration } = req.body || {};
+      if (!feedback || typeof feedback !== "string" || feedback.trim().length === 0) {
+        return res.status(400).json({ error: "Feedback text is required" });
+      }
+
+      const videoModel: VideoModelId = (requestedModel as VideoModelId) || "grok";
+      const videoDuration = requestedDuration ? parseInt(requestedDuration) : undefined;
+      const modelConfig = getVideoModelConfig(videoModel);
+
+      const images = await storage.getImagesByProject(req.params.id);
+      const sceneImages = images.filter(
+        (img) => img.sceneId === req.params.sceneId && img.status === "completed" && img.imageUrl
+      );
+
+      if (sceneImages.length === 0) {
+        return res.status(400).json({ error: "No eligible images in this scene" });
+      }
+
+      const scene = await storage.getScene(req.params.sceneId);
+      const storyBible = storyBibleCache.get(req.params.id) || null;
+
+      console.log(`[video-regen-scene-feedback] Regenerating ${sceneImages.length} videos for scene ${req.params.sceneId} with feedback: "${feedback.substring(0, 100)}"`);
+
+      for (const img of sceneImages) {
+        await storage.updateImage(img.id, {
+          videoStatus: "generating",
+          videoError: null,
+        });
+      }
+
+      res.json({
+        started: sceneImages.length,
+        model: modelConfig.name,
+        costPerClip: modelConfig.costPerClip,
+        estimatedCost: sceneImages.length * modelConfig.costPerClip,
+      });
+
+      (async () => {
+        for (const img of sceneImages) {
+          let shotLabel = `Shot ${img.variant}`;
+          try {
+            if (scene?.shotLabels) {
+              const labels = JSON.parse(scene.shotLabels);
+              if (labels[img.variant - 1]) shotLabel = labels[img.variant - 1];
+            }
+          } catch {}
+
+          const effectiveDuration = videoDuration || modelConfig.duration;
+          const previousPrompt = img.videoPromptSent || img.videoPrompt || "Cinematic slow motion";
+
+          try {
+            let videoPromptFinal: string;
+            try {
+              videoPromptFinal = await generateMotionPromptWithFeedback(
+                img.prompt,
+                scene?.sceneDescription || scene?.sentence || "",
+                shotLabel,
+                scene?.mood || "cinematic",
+                previousPrompt,
+                feedback.trim(),
+                effectiveDuration,
+                storyBible,
+                videoModel,
+              );
+            } catch {
+              videoPromptFinal = buildVideoPrompt(img.videoPrompt, img.prompt);
+            }
+
+            const result = await generateVideo(img.imageUrl!, videoPromptFinal, videoModel, videoDuration);
+            if (result.videoUrl) {
+              await storage.updateImage(img.id, {
+                videoStatus: "completed",
+                videoTaskId: result.taskId,
+                videoUrl: result.videoUrl,
+                videoModel: videoModel,
+                videoPromptSent: videoPromptFinal,
+                videoError: null,
+              });
+            } else {
+              await storage.updateImage(img.id, {
+                videoStatus: "generating",
+                videoTaskId: result.taskId,
+                videoUrl: null,
+                videoModel: videoModel,
+                videoPromptSent: videoPromptFinal,
+                videoError: null,
+              });
+            }
+          } catch (err: any) {
+            console.error(`[video-regen-scene-feedback] Failed for image ${img.id}: ${err.message}`);
+            await storage.updateImage(img.id, {
+              videoStatus: "failed",
+              videoModel: videoModel,
+              videoError: err.message,
+            });
+          }
+        }
+        console.log(`[video-regen-scene-feedback] Scene ${req.params.sceneId} video regeneration complete`);
+      })();
+    } catch (err: any) {
+      console.error("Scene video regeneration with feedback error:", err);
       res.status(500).json({ error: err.message });
     }
   });

@@ -1454,23 +1454,62 @@ export function splitIntoSentences(script: string): string[] {
   let text = script;
   const decimalPlaceholder = "<<DECIMAL>>";
   const abbreviationPlaceholder = "<<ABBR>>";
+  const ellipsisPlaceholder = "<<ELLIPSIS>>";
+  const quotedPeriodPlaceholder = "<<QPERIOD>>";
+
+  text = text.replace(/\.\.\./g, ellipsisPlaceholder);
 
   text = text.replace(/(\d)\.(\d)/g, `$1${decimalPlaceholder}$2`);
 
-  const abbreviations = ["Mr", "Mrs", "Ms", "Dr", "Lt", "Col", "Gen", "Sgt", "Cpl", "Pvt", "Cmdr", "Capt", "Adm", "Maj", "Jr", "Sr", "St", "vs", "etc", "approx"];
+  const abbreviations = [
+    "Mr", "Mrs", "Ms", "Dr", "Lt", "Col", "Gen", "Sgt", "Cpl", "Pvt",
+    "Cmdr", "Capt", "Adm", "Maj", "Jr", "Sr", "St", "vs", "etc", "approx",
+    "Inc", "Corp", "Ltd", "Ft", "Mt", "Ave", "Blvd", "Dept", "Est",
+    "Gov", "Pres", "Prof", "Rep", "Rev", "Sen", "Supt",
+    "No", "Vol", "Ch", "Fig", "Sec", "Art",
+    "Jan", "Feb", "Mar", "Apr", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    "U.S", "U.K", "E.U",
+  ];
   for (const abbr of abbreviations) {
-    const regex = new RegExp(`\\b${abbr}\\.`, "gi");
-    text = text.replace(regex, `${abbr}${abbreviationPlaceholder}`);
+    const regex = new RegExp(`\\b${abbr.replace(/\./g, "\\.")}\\.`, "gi");
+    text = text.replace(regex, `${abbr.replace(/\./g, "")}${abbreviationPlaceholder}`);
   }
 
-  const sentences = text
-    .split(/(?<=[.!?])\s+/)
-    .map((s) => s.replace(new RegExp(decimalPlaceholder.replace(/[<>]/g, "\\$&"), "g"), "."))
-    .map((s) => s.replace(new RegExp(abbreviationPlaceholder.replace(/[<>]/g, "\\$&"), "g"), "."))
-    .map((s) => s.trim())
-    .filter((s) => s.length > 5);
+  text = text.replace(/"([^"]*?)\.([^"]*?)"/g, (match, before, after) => {
+    return `"${before}${quotedPeriodPlaceholder}${after}"`;
+  });
+  text = text.replace(/'([^']*?)\.([^']*?)'/g, (match, before, after) => {
+    return `'${before}${quotedPeriodPlaceholder}${after}'`;
+  });
 
-  return sentences;
+  const rawSentences = text.split(/(?<=[.!?])\s+/);
+
+  const restorePlaceholders = (s: string): string => {
+    return s
+      .replace(new RegExp(decimalPlaceholder.replace(/[<>]/g, "\\$&"), "g"), ".")
+      .replace(new RegExp(abbreviationPlaceholder.replace(/[<>]/g, "\\$&"), "g"), ".")
+      .replace(new RegExp(ellipsisPlaceholder.replace(/[<>]/g, "\\$&"), "g"), "...")
+      .replace(new RegExp(quotedPeriodPlaceholder.replace(/[<>]/g, "\\$&"), "g"), ".");
+  };
+
+  const restored = rawSentences.map(s => restorePlaceholders(s).trim()).filter(s => s.length > 0);
+
+  const merged: string[] = [];
+  for (let i = 0; i < restored.length; i++) {
+    const s = restored[i];
+    const wordCount = s.split(/\s+/).filter(w => w.length > 0).length;
+
+    if (wordCount <= 3 && merged.length > 0) {
+      merged[merged.length - 1] = merged[merged.length - 1] + " " + s;
+    } else if (wordCount <= 3 && i + 1 < restored.length) {
+      merged.push(s + " " + restored[i + 1]);
+      i++;
+    } else {
+      merged.push(s);
+    }
+  }
+
+  return merged.filter(s => s.trim().length > 0);
 }
 
 export async function analyzeAndImprovePrompt(
@@ -1730,6 +1769,89 @@ FORBIDDEN (these ALWAYS produce bad results):
 - Rapid camera movement
 
 FORMAT: Write 2-3 sentences, 30-50 words total. No quotes, no labels, no explanation. Just the motion prompt text.`,
+      },
+    ],
+  });
+
+  const message = await stream.finalMessage();
+  const content = message.content[0];
+  if (content.type !== "text") {
+    throw new Error("Unexpected response type from Claude");
+  }
+
+  let motionPrompt = content.text.trim();
+  if (motionPrompt.startsWith('"') && motionPrompt.endsWith('"')) {
+    motionPrompt = motionPrompt.slice(1, -1);
+  }
+  if (motionPrompt.startsWith("```")) {
+    motionPrompt = motionPrompt.replace(/```\w*\n?/g, "").trim();
+  }
+
+  return motionPrompt;
+}
+
+export async function generateMotionPromptWithFeedback(
+  imagePrompt: string,
+  sceneDescription: string,
+  shotLabel: string,
+  mood: string,
+  previousMotionPrompt: string,
+  feedback: string,
+  videoDuration: number,
+  storyBible: StoryBible | null,
+  videoModelId?: string | null,
+): Promise<string> {
+  const analysis = storyBible?.analysis;
+
+  const aircraftList = analysis?.jets?.map((j: any) => `${j.name} (${j.type})`).join(", ") || "";
+  const aircraftContext = aircraftList ? `\nAIRCRAFT IN STORY: ${aircraftList}. These must maintain EXACT design throughout.` : "";
+
+  const imageContext = imagePrompt.substring(0, 800);
+
+  let modelName = "image-to-video AI";
+  switch (videoModelId) {
+    case "grok": modelName = "Grok Imagine Video (6s, 720p)"; break;
+    case "seedance": modelName = "Seedance 1.5 Pro (8s, 720p)"; break;
+    case "hailuo": modelName = "Hailuo 2.3 (6s, 768p)"; break;
+    case "veo31": modelName = "Veo 3.1 (8s, 1080p)"; break;
+    case "kling": modelName = "Kling 3.0 (15s, 1080p)"; break;
+    case "sora2pro": modelName = "Sora 2 Pro (15s, 1080p)"; break;
+    case "ltx23": modelName = "LTX 2.3 (8s, 1080p)"; break;
+  }
+
+  const stream = anthropic.messages.stream({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 300,
+    messages: [
+      {
+        role: "user",
+        content: `You write motion prompts for ${modelName} image-to-video generation. A previous motion prompt produced unsatisfactory results and the user has provided feedback on what went wrong.
+
+THE STILL IMAGE SHOWS:
+${imageContext}
+${aircraftContext}
+
+SCENE: ${sceneDescription.substring(0, 300)}
+MOOD: ${mood || "cinematic"}
+SHOT: ${shotLabel}
+DURATION: ${videoDuration} seconds
+
+PREVIOUS MOTION PROMPT THAT PRODUCED BAD RESULTS:
+"${previousMotionPrompt}"
+
+USER FEEDBACK ON WHAT WENT WRONG:
+"${feedback}"
+
+Write a NEW motion prompt that addresses the user's feedback while following these rules:
+1. START with a subject identity lock — describe what the main subject IS so the model preserves it
+2. Use ONE slow camera move (slow dolly, gentle push-in, subtle tracking, or static)
+3. Keep subject motion minimal — only continue what's already visible, never introduce new events
+4. Add ONE atmospheric detail (clouds, water, heat shimmer, smoke)
+5. ANTI-MORPHING: Never describe perspective changes, banking, rotating, or anything that forces the model to redraw subjects
+6. If the feedback mentions "morphing" or "changing design" — make the prompt even MORE conservative with less motion
+7. If the feedback mentions "too static" — add slightly more environmental motion while keeping subjects locked
+
+FORMAT: 2-3 sentences, 30-50 words total. No quotes, no labels, no explanation. Just the motion prompt.`,
       },
     ],
   });

@@ -503,6 +503,50 @@ export default function ProjectView() {
     }
   }, [id, toast, selectedVideoModel, selectedVideoDuration]);
 
+  const regenerateVideoWithFeedback = useCallback(async (imageId: string, feedback: string, modelOverride?: string) => {
+    if (!id) return;
+    setVideoGeneratingImageId(imageId);
+    try {
+      const model = modelOverride || selectedVideoModel;
+      const modelConfig = VIDEO_MODELS.find(m => m.id === model) || VIDEO_MODELS[0];
+      const body: any = { feedback, videoModel: model };
+      if (selectedVideoDuration && model === "kling") {
+        body.videoDuration = selectedVideoDuration;
+      }
+      const res = await apiRequest("POST", `/api/projects/${id}/images/${imageId}/regenerate-video-with-feedback`, body);
+      const updatedImage = await res.json();
+      queryClient.setQueryData(
+        ["/api/projects", id, "images"],
+        (old: any[] | undefined) => old ? old.map(img => img.id === imageId ? updatedImage : img) : old
+      );
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "images"] });
+      toast({ title: "Regenerating motion", description: `Video regeneration with feedback started using ${modelConfig.name}.` });
+    } catch (err: any) {
+      toast({ title: "Video regeneration failed", description: err.message, variant: "destructive" });
+    } finally {
+      setVideoGeneratingImageId(null);
+    }
+  }, [id, toast, selectedVideoModel, selectedVideoDuration]);
+
+  const regenerateSceneVideosWithFeedback = useCallback(async (sceneId: string, feedback: string) => {
+    if (!id) return;
+    setAnimatingSceneId(sceneId);
+    try {
+      const body: any = { feedback, videoModel: selectedVideoModel };
+      if (selectedVideoDuration && selectedVideoModel === "kling") {
+        body.videoDuration = selectedVideoDuration;
+      }
+      const res = await apiRequest("POST", `/api/projects/${id}/scenes/${sceneId}/regenerate-videos-with-feedback`, body);
+      const data = await res.json();
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "images"] });
+      toast({ title: "Regenerating scene motion", description: `Started ${data.started} video${data.started !== 1 ? "s" : ""} with feedback using ${currentVideoModel.name}.` });
+    } catch (err: any) {
+      toast({ title: "Scene video regeneration failed", description: err.message, variant: "destructive" });
+    } finally {
+      setAnimatingSceneId(null);
+    }
+  }, [id, toast, selectedVideoModel, selectedVideoDuration, currentVideoModel]);
+
   const animateAllScene = useCallback(async (sceneId: string) => {
     if (!id) return;
     setAnimatingSceneId(sceneId);
@@ -1496,6 +1540,7 @@ export default function ProjectView() {
                   onRegenerateImage={regenerateImage}
                   regeneratingImageId={regeneratingImageId}
                   onGenerateVideo={generateVideoFromImage}
+                  onRegenerateVideoWithFeedback={regenerateVideoWithFeedback}
                   videoGeneratingImageId={videoGeneratingImageId}
                   onAnimateAll={animateAllScene}
                   animatingSceneId={animatingSceneId}
@@ -1505,6 +1550,7 @@ export default function ProjectView() {
                   regeneratingSceneId={regeneratingSceneId}
                   onRegenerateImageWithConsistency={regenerateImageWithConsistency}
                   onRegenerateSceneWithConsistency={regenerateSceneWithConsistency}
+                  onRegenerateSceneVideosWithFeedback={regenerateSceneVideosWithFeedback}
                 />
               </>
             ) : isAnalyzing ? (
@@ -1537,6 +1583,7 @@ export default function ProjectView() {
               onRegenerateImage={regenerateImage}
               regeneratingImageId={regeneratingImageId}
               onGenerateVideo={generateVideoFromImage}
+              onRegenerateVideoWithFeedback={regenerateVideoWithFeedback}
               videoGeneratingImageId={videoGeneratingImageId}
               selectedVideoModel={selectedVideoModel}
               costPerImage={currentImageModel.costPerImage}
@@ -2000,6 +2047,7 @@ function StoryboardView({
   onRegenerateImage,
   regeneratingImageId,
   onGenerateVideo,
+  onRegenerateVideoWithFeedback,
   videoGeneratingImageId,
   onAnimateAll,
   animatingSceneId,
@@ -2009,6 +2057,7 @@ function StoryboardView({
   regeneratingSceneId,
   onRegenerateImageWithConsistency,
   onRegenerateSceneWithConsistency,
+  onRegenerateSceneVideosWithFeedback,
 }: {
   scenes: Scene[];
   images: GeneratedImage[];
@@ -2018,6 +2067,7 @@ function StoryboardView({
   onRegenerateImage: (imageId: string, feedback?: string) => void;
   regeneratingImageId: string | null;
   onGenerateVideo: (imageId: string, modelOverride?: string) => void;
+  onRegenerateVideoWithFeedback: (imageId: string, feedback: string, modelOverride?: string) => void;
   videoGeneratingImageId: string | null;
   onAnimateAll: (sceneId: string) => void;
   animatingSceneId: string | null;
@@ -2027,12 +2077,15 @@ function StoryboardView({
   regeneratingSceneId: string | null;
   onRegenerateImageWithConsistency?: (imageId: string) => void;
   onRegenerateSceneWithConsistency?: (sceneId: string) => void;
+  onRegenerateSceneVideosWithFeedback?: (sceneId: string, feedback: string) => void;
 }) {
   const [lightboxImage, setLightboxImage] = useState<GeneratedImage | null>(null);
   const [sceneFeedbackId, setSceneFeedbackId] = useState<string | null>(null);
   const [sceneFeedbackText, setSceneFeedbackText] = useState("");
   const [imageFeedbackId, setImageFeedbackId] = useState<string | null>(null);
   const [imageFeedbackText, setImageFeedbackText] = useState("");
+  const [sceneVideoFeedbackId, setSceneVideoFeedbackId] = useState<string | null>(null);
+  const [sceneVideoFeedbackText, setSceneVideoFeedbackText] = useState("");
   const [expandedErrorId, setExpandedErrorId] = useState<string | null>(null);
   const currentModel = VIDEO_MODELS.find(m => m.id === selectedVideoModel) || VIDEO_MODELS[0];
 
@@ -2228,7 +2281,66 @@ function StoryboardView({
                   }
                   return null;
                 })()}
+
+                {(() => {
+                  const sceneImages = images.filter(img => img.sceneId === scene.id);
+                  const hasVideos = sceneImages.some(img => img.videoUrl || img.videoStatus === "completed");
+                  if (hasVideos && onRegenerateSceneVideosWithFeedback) {
+                    return (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setSceneVideoFeedbackId(sceneVideoFeedbackId === scene.id ? null : scene.id);
+                          setSceneVideoFeedbackText("");
+                        }}
+                        className="glass-border rounded-xl text-xs text-amber-300/70 hover:text-amber-300 hover:bg-amber-400/[0.05] border-amber-400/20 transition-all duration-200"
+                      >
+                        <MessageSquare className="w-3 h-3 mr-1" />
+                        {sceneVideoFeedbackId === scene.id ? "Cancel" : "Redo Scene Motion with Feedback"}
+                      </Button>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
+
+              {sceneVideoFeedbackId === scene.id && onRegenerateSceneVideosWithFeedback && (
+                <div className="mb-3 p-4 rounded-xl bg-amber-500/5 border border-amber-500/20 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Video className="w-4 h-4 text-amber-400" />
+                    <span className="text-xs text-amber-300 font-semibold">Scene Motion Feedback</span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mb-2.5">
+                    All videos in this scene will be regenerated with your feedback applied to guide the motion prompts.
+                  </p>
+                  <textarea
+                    value={sceneVideoFeedbackText}
+                    onChange={(e) => setSceneVideoFeedbackText(e.target.value)}
+                    placeholder="e.g. 'the aircraft keeps morphing between frames' or 'too much camera shake' or 'the jet design changes mid-clip, keep it static' or 'needs more atmospheric motion like clouds drifting'"
+                    className="w-full h-20 text-xs rounded-xl border border-amber-400/15 bg-black/20 text-white px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-amber-400/30 focus:border-amber-400/20 placeholder:text-white/25"
+                    autoFocus
+                  />
+                  <div className="flex gap-2 mt-2.5">
+                    <Button
+                      size="sm"
+                      onClick={() => { onRegenerateSceneVideosWithFeedback(scene.id, sceneVideoFeedbackText); setSceneVideoFeedbackId(null); setSceneVideoFeedbackText(""); }}
+                      disabled={!sceneVideoFeedbackText.trim()}
+                      className="rounded-xl text-xs bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-400/20"
+                    >
+                      <Send className="w-3 h-3 mr-1" />Regenerate Scene Videos
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => { setSceneVideoFeedbackId(null); setSceneVideoFeedbackText(""); }}
+                      className="rounded-xl text-xs text-white/50 hover:text-white/70"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
 
               {sceneFeedbackId === scene.id && (
                 <div className="mb-3 p-4 rounded-xl bg-blue-500/5 border border-blue-500/20 animate-in fade-in slide-in-from-top-2 duration-200">
@@ -2597,6 +2709,7 @@ function StoryboardView({
         onRegenerateImage={onRegenerateImage}
         regeneratingImageId={regeneratingImageId}
         onGenerateVideo={onGenerateVideo}
+        onRegenerateVideoWithFeedback={onRegenerateVideoWithFeedback}
         videoGeneratingImageId={videoGeneratingImageId}
         selectedVideoModel={selectedVideoModel}
         costPerImage={costPerImage}
@@ -2612,6 +2725,7 @@ function GalleryView({
   onRegenerateImage,
   regeneratingImageId,
   onGenerateVideo,
+  onRegenerateVideoWithFeedback,
   videoGeneratingImageId,
   selectedVideoModel,
   costPerImage,
@@ -2622,6 +2736,7 @@ function GalleryView({
   onRegenerateImage: (imageId: string, feedback?: string) => void;
   regeneratingImageId: string | null;
   onGenerateVideo: (imageId: string, modelOverride?: string) => void;
+  onRegenerateVideoWithFeedback: (imageId: string, feedback: string, modelOverride?: string) => void;
   videoGeneratingImageId: string | null;
   selectedVideoModel: string;
   costPerImage: number;
@@ -2824,6 +2939,7 @@ function GalleryView({
         onRegenerateImage={onRegenerateImage}
         regeneratingImageId={regeneratingImageId}
         onGenerateVideo={onGenerateVideo}
+        onRegenerateVideoWithFeedback={onRegenerateVideoWithFeedback}
         videoGeneratingImageId={videoGeneratingImageId}
         selectedVideoModel={selectedVideoModel}
         costPerImage={costPerImage}
@@ -3174,6 +3290,7 @@ function Lightbox({
   onRegenerateImage,
   regeneratingImageId,
   onGenerateVideo,
+  onRegenerateVideoWithFeedback,
   videoGeneratingImageId,
   selectedVideoModel,
   costPerImage,
@@ -3186,6 +3303,7 @@ function Lightbox({
   onRegenerateImage: (imageId: string, feedback?: string) => void;
   regeneratingImageId: string | null;
   onGenerateVideo: (imageId: string, modelOverride?: string) => void;
+  onRegenerateVideoWithFeedback: (imageId: string, feedback: string, modelOverride?: string) => void;
   videoGeneratingImageId: string | null;
   selectedVideoModel: string;
   costPerImage: number;
@@ -3195,6 +3313,8 @@ function Lightbox({
   const [lightboxModel, setLightboxModel] = useState(selectedVideoModel);
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedbackText, setFeedbackText] = useState("");
+  const [showVideoFeedback, setShowVideoFeedback] = useState(false);
+  const [videoFeedbackText, setVideoFeedbackText] = useState("");
   const currentModel = VIDEO_MODELS.find(m => m.id === lightboxModel) || VIDEO_MODELS[0];
   const overlayRef = useRef<HTMLDivElement>(null);
 
@@ -3218,6 +3338,8 @@ function Lightbox({
     setShowVideoPrompt(false);
     setShowFeedback(false);
     setFeedbackText("");
+    setShowVideoFeedback(false);
+    setVideoFeedbackText("");
   }, [selectedImage?.id]);
 
   useEffect(() => {
@@ -3394,6 +3516,14 @@ function Lightbox({
                     <><RotateCcw className="w-3 h-3" />Redo Motion ({currentModel.name} ~{formatCost(currentModel.costPerClip)})</>
                   )}
                 </button>
+                <button
+                  onClick={() => { setShowVideoFeedback(!showVideoFeedback); setVideoFeedbackText(""); }}
+                  disabled={videoGeneratingImageId === selectedImage.id}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-medium border border-amber-400/20 text-amber-300/70 hover:text-amber-300 hover:border-amber-400/30 hover:bg-amber-400/[0.05] transition-all duration-200 disabled:opacity-50"
+                  title="Regenerate video with feedback on what to fix"
+                >
+                  <MessageSquare className="w-3 h-3" />{showVideoFeedback ? "Cancel" : "Redo Motion with Feedback"}
+                </button>
               </>
             ) : selectedImage.videoStatus === "generating" ? (
               <button disabled className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-medium border border-yellow-400/30 text-yellow-300 opacity-80" data-testid="button-lightbox-video-pending">
@@ -3449,6 +3579,34 @@ function Lightbox({
                 <button
                   className="px-3.5 py-1.5 rounded-xl text-xs text-white/50 hover:text-white/70 transition-colors"
                   onClick={() => { setShowFeedback(false); setFeedbackText(""); }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {showVideoFeedback && (
+            <div className="mt-3 p-3.5 rounded-xl bg-amber-900/10 border border-amber-400/15 backdrop-blur-sm w-full">
+              <p className="text-amber-300/70 text-xs mb-2 font-medium">Describe what's wrong with the motion:</p>
+              <textarea
+                value={videoFeedbackText}
+                onChange={(e) => setVideoFeedbackText(e.target.value)}
+                placeholder="e.g. 'the jet design keeps changing mid-clip' or 'too static, needs more cloud movement' or 'camera is too shaky' or 'the aircraft morphs into a different design'"
+                className="w-full h-20 text-xs rounded-xl border border-amber-400/15 bg-black/30 text-white px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-amber-400/40 focus:border-amber-400/30 placeholder:text-white/25 transition-all duration-200"
+                autoFocus
+              />
+              <div className="flex gap-2 mt-2">
+                <button
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-400/20 transition-all duration-200 active:scale-[0.98] disabled:opacity-50"
+                  onClick={() => { onRegenerateVideoWithFeedback(selectedImage.id, videoFeedbackText, lightboxModel); setShowVideoFeedback(false); setVideoFeedbackText(""); }}
+                  disabled={!videoFeedbackText.trim() || videoGeneratingImageId === selectedImage.id}
+                >
+                  <Send className="w-3 h-3" />Regenerate Motion with Feedback (~{formatCost(currentModel.costPerClip)})
+                </button>
+                <button
+                  className="px-3.5 py-1.5 rounded-xl text-xs text-white/50 hover:text-white/70 transition-colors"
+                  onClick={() => { setShowVideoFeedback(false); setVideoFeedbackText(""); }}
                 >
                   Cancel
                 </button>
