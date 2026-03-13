@@ -38,6 +38,22 @@ Once a project exists, the system analyzes the script using Claude Opus 4.6, bui
   - Kling 3.0 ($1.50/clip, 15s, 1080p) - premium maximum-duration clips with best motion
   - Sora 2 Pro ($0.958/clip, 15s, 1080p HD) - OpenAI premium with physics-accurate motion
 
+## Cost Tracking System
+- **Database columns**: `analysisCost`, `imageGenerationCost`, `videoGenerationCost` (real/float) on projects table
+- **Server-side tracking**: `storage.addProjectCost()` atomically increments costs at generation points (uses SQL COALESCE + increment)
+- **Analysis cost**: Estimated based on script word count and scene count after analysis completes
+- **Image cost**: Tracked per successful image submission (generate-all, single scene generate, regeneration, consistency regeneration, retry-failed, smart-regenerate, feedback regeneration with fallbacks)
+- **Video cost**: Tracked per video generation (single, animate-all, scene, feedback-based)
+- **Frontend display**: Cost breakdown in project header tooltip, detailed "Spent So Far" panel with per-category itemization
+- **Fallback**: For older projects without tracked costs, falls back to client-side estimates based on completed counts
+
+## Image Regeneration with Feedback
+- **Subject identity lock**: `applyFeedbackToPrompt()` uses strict rules to preserve the original subject identity (aircraft type, era, vehicle, character) when applying feedback
+- **Scene context**: Feedback regeneration receives scene description, mood, shot label, and Story Bible (aircraft/character descriptions) to maintain continuity. Uses `visualDetails` field (not visualDescription) for jets and characters per Story Bible schema
+- **Story Bible fallback**: `getStoryBible()` helper function first checks in-memory cache, then falls back to persisted `project.analysis` from database — survives server restarts
+- **Minimal diff principle**: AI makes only the requested change, keeping the rest of the prompt word-for-word identical
+- **Era protection**: Historical era elements (WWII, Cold War, etc.) are locked and cannot be accidentally changed
+
 ## Character Reference System
 - **Multi-angle portraits**: Each character gets 3 portraits (front view, three-quarter view, side profile)
 - **Database**: `characterReferences` table with `angle` column (values: "front", "three-quarter", "profile")

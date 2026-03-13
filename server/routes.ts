@@ -954,6 +954,23 @@ Write the script now. Output ONLY the script text, nothing else.`,
   const storyBibleCache = new Map<string, StoryBible>();
   const visualScenesCache = new Map<string, VisualScene[]>();
 
+  async function getStoryBible(projectId: string): Promise<StoryBible | null> {
+    const cached = storyBibleCache.get(projectId);
+    if (cached) return cached;
+    const project = await storage.getProject(projectId);
+    if (project?.analysis && typeof project.analysis === "object") {
+      const analysis = project.analysis as any;
+      const reconstructed: StoryBible = {
+        analysis,
+        narrativeArc: { opening: "", rising: "", climax: "", resolution: "" },
+        moodTimeline: [],
+      };
+      storyBibleCache.set(projectId, reconstructed);
+      return reconstructed;
+    }
+    return null;
+  }
+
   interface GenerationProgress {
     status: "submitting" | "polling" | "complete" | "error";
     totalImages: number;
@@ -1118,11 +1135,15 @@ Write the script now. Output ONLY the script text, nothing else.`,
             createdCount++;
           }
 
+          const scriptWordCount = project.script.split(/\s+/).length;
+          const estimatedAnalysisCost = Math.max(0.10, (scriptWordCount / 1000) * 0.15 + createdCount * 0.05);
+          storage.addProjectCost(project.id, "analysisCost", parseFloat(estimatedAnalysisCost.toFixed(4))).catch(() => {});
+
           await storage.updateProject(project.id, {
             status: "analyzed",
           });
           await setProgressDb(project.id, "complete", `Analysis complete! ${createdCount} scenes created.`, totalPromptSteps, totalPromptSteps);
-          console.log(`Analysis complete for project ${project.id}: ${createdCount} scenes`);
+          console.log(`Analysis complete for project ${project.id}: ${createdCount} scenes, est. analysis cost: $${estimatedAnalysisCost.toFixed(4)}`);
 
           if (analysis.characters && analysis.characters.length > 0) {
             try {
@@ -1211,7 +1232,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
         scenes.sort((a, b) => a.sentenceIndex - b.sentenceIndex);
         const sceneIndex = scenes.findIndex((s) => s.id === scene.id);
 
-        const storyBible = storyBibleCache.get(project.id);
+        const storyBible = await getStoryBible(project.id);
         const cachedVisualScenes = visualScenesCache.get(project.id);
 
         if (storyBible && cachedVisualScenes && cachedVisualScenes[sceneIndex]) {
@@ -1299,7 +1320,9 @@ Write the script now. Output ONLY the script text, nothing else.`,
         const videoPromptText = motionPrompts[variant - 1] || "Cinematic slow camera motion with subtle parallax depth, smooth atmospheric movement";
 
         try {
+          const sceneGenModelConfig = getImageModelConfig(imgModel);
           const { taskId } = await generateImage(prompt, charRefUrls.length > 0 ? charRefUrls : undefined, imgModel);
+          storage.addProjectCost(project.id, "imageGenerationCost", sceneGenModelConfig.costPerImage).catch(() => {});
           const img = await storage.createImage({
             sceneId: scene.id,
             projectId: project.id,
@@ -1386,7 +1409,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
         }
 
         if (prompts.length < 2) {
-          const storyBible = storyBibleCache.get(project.id);
+          const storyBible = await getStoryBible(project.id);
           const cachedVisualScenes = visualScenesCache.get(project.id);
 
           if (storyBible && cachedVisualScenes && cachedVisualScenes[si]) {
@@ -1532,6 +1555,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
               }
 
               try {
+                const modelConfig = getImageModelConfig(imgModel);
                 const { taskId } = await generateImage(item.prompt, item.charRefUrls.length > 0 ? item.charRefUrls : undefined, imgModel);
                 const img = await storage.createImage({
                   sceneId: item.sceneId,
@@ -1546,6 +1570,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
                 waveImageIds.push(img.id);
                 progress.submitted++;
                 consecutiveFailCount = 0;
+                storage.addProjectCost(item.projectId, "imageGenerationCost", modelConfig.costPerImage).catch(() => {});
               } catch (genErr: any) {
                 const errMsg = genErr.message || "";
                 console.error(`[generate-all] Submit failed:`, errMsg);
@@ -1800,7 +1825,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
       const { feedback, imageModel } = req.body || {};
       const imgModel = (imageModel as ImageModelId) || undefined;
       const scene = await storage.getScene(img.sceneId);
-      const storyBible = storyBibleCache.get(req.params.id) || null;
+      const storyBible = await getStoryBible(req.params.id);
 
       let shotLabel = "Cinematic Shot";
       let sceneDescription = "";
@@ -1808,7 +1833,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
       if (scene) {
         try {
           const shotLabels = scene.shotLabels ? JSON.parse(scene.shotLabels) : [];
-          shotLabel = shotLabels[img.variant] || shotLabel;
+          shotLabel = shotLabels[img.variant - 1] || shotLabel;
         } catch {}
         sceneDescription = scene.sceneDescription || "";
         mood = scene.mood || mood;
@@ -1826,7 +1851,12 @@ Write the script now. Output ONLY the script text, nothing else.`,
           let improvedPrompt: string;
           if (feedback && feedback.trim()) {
             console.log(`Feedback regeneration: Applying feedback for image ${img.id}: "${feedback}"`);
-            improvedPrompt = await applyFeedbackToPrompt(img.prompt, feedback, false);
+            improvedPrompt = await applyFeedbackToPrompt(img.prompt, feedback, false, {
+              sceneDescription,
+              mood,
+              shotLabel,
+              storyBible,
+            });
             console.log(`Feedback regeneration: Modified prompt generated (${improvedPrompt.length} chars). Generating image...`);
           } else {
             console.log(`Smart regeneration: Analyzing prompt for image ${img.id}...`);
@@ -1841,21 +1871,25 @@ Write the script now. Output ONLY the script text, nothing else.`,
           }
 
           const charRefUrls = scene ? await getCharacterReferenceUrlsForScene(req.params.id, scene) : [];
+          const regenModelConfig = getImageModelConfig(imgModel);
           const { taskId } = await generateImage(improvedPrompt, charRefUrls.length > 0 ? charRefUrls : undefined, imgModel);
           await storage.updateImage(img.id, {
             status: "generating",
             taskId,
             prompt: improvedPrompt,
           });
+          storage.addProjectCost(req.params.id, "imageGenerationCost", regenModelConfig.costPerImage).catch(() => {});
         } catch (err: any) {
           console.error(`Regeneration failed for image ${img.id}:`, err.message);
           try {
             console.log(`Falling back to original prompt for image ${img.id}`);
+            const fallbackModelConfig = getImageModelConfig(imgModel);
             const { taskId } = await generateImage(img.prompt, undefined, imgModel);
             await storage.updateImage(img.id, {
               status: "generating",
               taskId,
             });
+            storage.addProjectCost(req.params.id, "imageGenerationCost", fallbackModelConfig.costPerImage).catch(() => {});
           } catch (fallbackErr: any) {
             console.error(`Fallback regeneration also failed for image ${img.id}:`, fallbackErr.message);
             await storage.updateImage(img.id, {
@@ -1892,26 +1926,35 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
       res.json({ status: "regenerating", total: sceneImages.length, message: "AI is applying your feedback to all images in this scene..." });
 
-      const storyBible = storyBibleCache.get(project.id) || null;
+      const storyBible = await getStoryBible(project.id);
 
       (async () => {
         for (const img of sceneImages) {
           try {
-            const improvedPrompt = await applyFeedbackToPrompt(img.prompt, feedback, false);
+            const improvedPrompt = await applyFeedbackToPrompt(img.prompt, feedback, false, {
+              sceneDescription: scene.sceneDescription || "",
+              mood: scene.mood || "cinematic",
+              shotLabel: (() => { try { const labels = scene.shotLabels ? JSON.parse(scene.shotLabels) : []; return labels[img.variant - 1] || "Cinematic Shot"; } catch { return "Cinematic Shot"; } })(),
+              storyBible,
+            });
             console.log(`Scene feedback regen: Improved prompt for image ${img.id} (${improvedPrompt.length} chars)`);
 
             const charRefUrls = scene ? await getCharacterReferenceUrlsForScene(project.id, scene) : [];
+            const scnModelConfig = getImageModelConfig(imgModel);
             const { taskId } = await generateImage(improvedPrompt, charRefUrls.length > 0 ? charRefUrls : undefined, imgModel);
             await storage.updateImage(img.id, {
               status: "generating",
               taskId,
               prompt: improvedPrompt,
             });
+            storage.addProjectCost(project.id, "imageGenerationCost", scnModelConfig.costPerImage).catch(() => {});
           } catch (err: any) {
             console.error(`Scene feedback regen failed for image ${img.id}:`, err.message);
             try {
+              const fallbackScnConfig = getImageModelConfig(imgModel);
               const { taskId } = await generateImage(img.prompt, undefined, imgModel);
               await storage.updateImage(img.id, { status: "generating", taskId });
+              storage.addProjectCost(project.id, "imageGenerationCost", fallbackScnConfig.costPerImage).catch(() => {});
             } catch (fallbackErr: any) {
               console.error(`Scene feedback regen fallback also failed for image ${img.id}:`, fallbackErr.message);
               await storage.updateImage(img.id, { status: "failed" });
@@ -1945,8 +1988,10 @@ Write the script now. Output ONLY the script text, nothing else.`,
             console.warn(`[consistency-regen] No character reference images found for image ${img.id}`);
           }
           console.log(`[consistency-regen] Regenerating image ${img.id} with ${charRefUrls.length} character reference(s)`);
+          const consistModelConfig = getImageModelConfig(imgModel);
           const { taskId } = await generateImage(img.prompt, charRefUrls.length > 0 ? charRefUrls : undefined, imgModel);
           await storage.updateImage(img.id, { status: "generating", taskId });
+          storage.addProjectCost(req.params.id, "imageGenerationCost", consistModelConfig.costPerImage).catch(() => {});
         } catch (err: any) {
           console.error(`[consistency-regen] Failed for image ${img.id}:`, err.message);
           await storage.updateImage(img.id, { status: "failed" });
@@ -1981,10 +2026,12 @@ Write the script now. Output ONLY the script text, nothing else.`,
         const charRefUrls = await getCharacterReferenceUrlsForScene(project.id, scene);
         console.log(`[consistency-regen-scene] Regenerating ${sceneImages.length} images with ${charRefUrls.length} character reference(s)`);
 
+        const scnConsistModelConfig = getImageModelConfig(imgModel);
         for (const img of sceneImages) {
           try {
             const { taskId } = await generateImage(img.prompt, charRefUrls.length > 0 ? charRefUrls : undefined, imgModel);
             await storage.updateImage(img.id, { status: "generating", taskId });
+            storage.addProjectCost(project.id, "imageGenerationCost", scnConsistModelConfig.costPerImage).catch(() => {});
           } catch (err: any) {
             console.error(`[consistency-regen-scene] Failed for image ${img.id}:`, err.message);
             await storage.updateImage(img.id, { status: "failed" });
@@ -2082,11 +2129,13 @@ Write the script now. Output ONLY the script text, nothing else.`,
               try {
                 const scene = await storage.getScene(img.sceneId);
                 const charRefUrls = scene ? await getCharacterReferenceUrlsForScene(project.id, scene) : [];
+                const retryModelConfig = getImageModelConfig(imgModel);
                 const { taskId } = await generateImage(img.prompt, charRefUrls.length > 0 ? charRefUrls : undefined, imgModel);
                 await storage.updateImage(img.id, { status: "generating", taskId, imageUrl: null });
                 waveImageIds.push(img.id);
                 progress.submitted++;
                 consecutiveFailCount = 0;
+                storage.addProjectCost(project.id, "imageGenerationCost", retryModelConfig.costPerImage).catch(() => {});
               } catch (genErr: any) {
                 const errMsg = genErr.message || "";
                 console.error(`[retry-failed] Submit failed for ${img.id}:`, errMsg);
@@ -2250,7 +2299,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
       res.json({ started: true, total: failedImages.length });
 
-      const storyBible = storyBibleCache.get(project.id) || null;
+      const storyBible = await getStoryBible(project.id);
 
       (async () => {
         let completed = 0;
@@ -2266,7 +2315,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
             if (scene) {
               try {
                 const shotLabels = scene.shotLabels ? JSON.parse(scene.shotLabels) : [];
-                shotLabel = shotLabels[img.variant] || shotLabel;
+                shotLabel = shotLabels[img.variant - 1] || shotLabel;
               } catch {}
               sceneDescription = scene.sceneDescription || "";
               mood = scene.mood || mood;
@@ -2306,7 +2355,9 @@ Write the script now. Output ONLY the script text, nothing else.`,
             });
 
             const charRefUrls = scene ? await getCharacterReferenceUrlsForScene(project.id, scene) : [];
+            const smartModelConfig = getImageModelConfig(imgModel);
             const { taskId } = await generateImage(improvedPrompt, charRefUrls.length > 0 ? charRefUrls : undefined, imgModel);
+            storage.addProjectCost(project.id, "imageGenerationCost", smartModelConfig.costPerImage).catch(() => {});
             await storage.updateImage(img.id, {
               status: "generating",
               taskId,
@@ -2369,7 +2420,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
       const scenes = await storage.getScenesByProject(req.params.id);
       const sceneMap = new Map(scenes.map((s: any) => [s.id, s]));
-      const storyBible = storyBibleCache.get(req.params.id) || null;
+      const storyBible = await getStoryBible(req.params.id);
 
       console.log(`[animate-all-videos] Starting batch video generation for ${eligible.length} images with model ${videoModel}`);
 
@@ -2416,6 +2467,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
             const effectiveDuration = (videoModel === "kling" && videoDuration) ? videoDuration : undefined;
             const result = await generateVideo(img.imageUrl!, videoPromptFinal, videoModel, effectiveDuration);
+            storage.addProjectCost(req.params.id, "videoGenerationCost", model.costPerClip).catch(() => {});
             if (result.videoUrl) {
               await storage.updateImage(img.id, {
                 videoStatus: "completed",
@@ -2482,7 +2534,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
       }
 
       const scene = await storage.getScene(req.params.sceneId);
-      const storyBible = storyBibleCache.get(req.params.id) || null;
+      const storyBible = await getStoryBible(req.params.id);
 
       const results = [];
       for (const img of sceneImages) {
@@ -2515,6 +2567,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
           const effectiveDuration = (videoModel === "kling" && videoDuration) ? videoDuration : undefined;
           const result = await generateVideo(img.imageUrl!, videoPromptFinal, videoModel, effectiveDuration);
+          storage.addProjectCost(req.params.id, "videoGenerationCost", model.costPerClip).catch(() => {});
           if (result.videoUrl) {
             const updated = await storage.updateImage(img.id, {
               videoStatus: "completed",
@@ -2562,7 +2615,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
       }
 
       const scene = await storage.getScene(img.sceneId);
-      const storyBible = storyBibleCache.get(req.params.id) || null;
+      const storyBible = await getStoryBible(req.params.id);
 
       let shotLabel = `Shot ${img.variant}`;
       try {
@@ -2593,6 +2646,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
       }
 
       const result = await generateVideo(img.imageUrl, videoPromptFinal, videoModel, videoDuration);
+      storage.addProjectCost(img.projectId, "videoGenerationCost", modelConfig.costPerClip).catch(() => {});
       if (result.videoUrl) {
         const updated = await storage.updateImage(img.id, {
           videoStatus: "completed",
@@ -2646,7 +2700,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
       }
 
       const scene = await storage.getScene(img.sceneId);
-      const storyBible = storyBibleCache.get(req.params.id) || null;
+      const storyBible = await getStoryBible(req.params.id);
 
       let shotLabel = `Shot ${img.variant}`;
       try {
@@ -2681,6 +2735,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
       }
 
       const result = await generateVideo(img.imageUrl, videoPromptFinal, videoModel, videoDuration);
+      storage.addProjectCost(req.params.id, "videoGenerationCost", modelConfig.costPerClip).catch(() => {});
       if (result.videoUrl) {
         const updated = await storage.updateImage(img.id, {
           videoStatus: "completed",
@@ -2729,7 +2784,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
       }
 
       const scene = await storage.getScene(req.params.sceneId);
-      const storyBible = storyBibleCache.get(req.params.id) || null;
+      const storyBible = await getStoryBible(req.params.id);
 
       console.log(`[video-regen-scene-feedback] Regenerating ${sceneImages.length} videos for scene ${req.params.sceneId} with feedback: "${feedback.substring(0, 100)}"`);
 
@@ -2779,6 +2834,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
             }
 
             const result = await generateVideo(img.imageUrl!, videoPromptFinal, videoModel, videoDuration);
+            storage.addProjectCost(req.params.id, "videoGenerationCost", modelConfig.costPerClip).catch(() => {});
             if (result.videoUrl) {
               await storage.updateImage(img.id, {
                 videoStatus: "completed",
@@ -2845,7 +2901,9 @@ Write the script now. Output ONLY the script text, nothing else.`,
           console.log(`[video-gen] Auto-retrying ${img.videoModel} for image ${img.id} (attempt ${newRetryCount}/5): ${errorMsg}`);
           try {
             const retryPrompt = img.videoPromptSent || buildVideoPrompt(img.videoPrompt, img.prompt);
+            const retryVideoConfig = getVideoModelConfig(img.videoModel as any);
             const retryResult = await generateVideo(img.imageUrl, retryPrompt, img.videoModel as any);
+            storage.addProjectCost(img.projectId, "videoGenerationCost", retryVideoConfig.costPerVideo).catch(() => {});
             if (retryResult.videoUrl) {
               const updated = await storage.updateImage(img.id, {
                 videoStatus: "completed",
@@ -2905,7 +2963,9 @@ Write the script now. Output ONLY the script text, nothing else.`,
               console.log(`[video-gen] Auto-retrying ${img.videoModel} for image ${img.id} (poll-videos, attempt ${newRetryCount}/5): ${errorMsg}`);
               try {
                 const retryPrompt = img.videoPromptSent || buildVideoPrompt(img.videoPrompt, img.prompt);
+                const retryVideoConfig2 = getVideoModelConfig(img.videoModel as any);
                 const retryResult = await generateVideo(img.imageUrl, retryPrompt, img.videoModel as any);
+                storage.addProjectCost(img.projectId, "videoGenerationCost", retryVideoConfig2.costPerVideo).catch(() => {});
                 if (retryResult.videoUrl) {
                   await storage.updateImage(img.id, {
                     videoStatus: "completed",

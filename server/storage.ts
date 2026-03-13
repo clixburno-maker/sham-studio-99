@@ -11,7 +11,7 @@ import {
   users, projects, scenes, generatedImages, characterReferences, niches, nicheVideos, savedScripts, customVoices,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -22,6 +22,7 @@ export interface IStorage {
   getProject(id: string): Promise<Project | undefined>;
   createProject(project: InsertProject): Promise<Project>;
   updateProject(id: string, data: Partial<Project>): Promise<Project>;
+  addProjectCost(id: string, costType: "analysisCost" | "imageGenerationCost" | "videoGenerationCost", amount: number): Promise<void>;
 
   getScenesByProject(projectId: string): Promise<Scene[]>;
   getScene(id: string): Promise<Scene | undefined>;
@@ -100,6 +101,18 @@ export class DatabaseStorage implements IStorage {
   async updateProject(id: string, data: Partial<Project>): Promise<Project> {
     const [updated] = await db.update(projects).set(data).where(eq(projects.id, id)).returning();
     return updated;
+  }
+
+  async addProjectCost(id: string, costType: "analysisCost" | "imageGenerationCost" | "videoGenerationCost", amount: number): Promise<void> {
+    const columnMap = {
+      analysisCost: projects.analysisCost,
+      imageGenerationCost: projects.imageGenerationCost,
+      videoGenerationCost: projects.videoGenerationCost,
+    };
+    const column = columnMap[costType];
+    await db.update(projects)
+      .set({ [costType]: sql`COALESCE(${column}, 0) + ${amount}` })
+      .where(eq(projects.id, id));
   }
 
   async getScenesByProject(projectId: string): Promise<Scene[]> {

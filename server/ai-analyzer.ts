@@ -1622,35 +1622,76 @@ export async function applyFeedbackToPrompt(
   originalPrompt: string,
   userFeedback: string,
   isCharacterPortrait: boolean,
+  sceneContext?: { sceneDescription?: string; mood?: string; shotLabel?: string; storyBible?: any },
 ): Promise<string> {
+  let contextBlock = "";
+  if (sceneContext) {
+    const parts: string[] = [];
+    if (sceneContext.sceneDescription) {
+      parts.push(`SCENE DESCRIPTION: ${sceneContext.sceneDescription}`);
+    }
+    if (sceneContext.mood) {
+      parts.push(`MOOD: ${sceneContext.mood}`);
+    }
+    if (sceneContext.shotLabel) {
+      parts.push(`SHOT TYPE: ${sceneContext.shotLabel}`);
+    }
+    if (sceneContext.storyBible?.analysis) {
+      const analysis = sceneContext.storyBible.analysis;
+      if (analysis.jets?.length > 0) {
+        const jetDescriptions = analysis.jets.map((j: any) => {
+          const details = j.visualDetails ? ` — ${j.visualDetails.substring(0, 300)}` : "";
+          return `${j.name}: ${j.type}${details}`;
+        }).join("\n  ");
+        parts.push(`AIRCRAFT IN THIS STORY:\n  ${jetDescriptions}`);
+      }
+      if (analysis.characters?.length > 0) {
+        const charDescriptions = analysis.characters.map((c: any) => {
+          const desc = c.appearance || c.visualDetails || "";
+          return `${c.name}: ${desc}`.trim();
+        }).join("\n  ");
+        parts.push(`CHARACTERS IN THIS STORY:\n  ${charDescriptions}`);
+      }
+    }
+    if (parts.length > 0) {
+      contextBlock = `\nSCENE CONTEXT (use this to maintain accuracy):\n${parts.join("\n")}\n`;
+    }
+  }
+
   const stream = anthropic.messages.stream({
     model: "claude-opus-4-6",
     max_tokens: 8192,
     messages: [
       {
         role: "user",
-        content: `You are an expert prompt engineer. A user generated an image using the prompt below but wants specific changes. Apply their feedback to create an improved prompt.
+        content: `You are an expert prompt engineer specializing in SURGICAL modifications to image generation prompts. A user generated an image and wants a SMALL, TARGETED adjustment. Your job is to apply ONLY what they asked for while keeping everything else IDENTICAL.
 
-CRITICAL RULES:
-- Keep the SAME overall style, format, and structure of the original prompt
-- Do NOT dramatically rewrite or shorten the prompt — make TARGETED modifications based on the feedback only
-- Preserve ALL identity anchoring, signature features, and visual DNA descriptions word-for-word UNLESS the feedback specifically asks to change them
-- The image style is: Unreal Engine 5 cinematic 3D render — high-fidelity CGI with slight stylization, NOT a real photograph
-- Characters should look like high-quality cinematic CGI (think Unreal Engine 5 cutscene quality), not like a real photograph of a real person
-- Keep all existing lighting, composition, and technical details unless feedback contradicts them
-${isCharacterPortrait ? "- This is a CHARACTER REFERENCE PORTRAIT — maintain the portrait format (medium close-up, clean background, direct eye contact)" : ""}
+ABSOLUTE RULES — VIOLATION OF ANY RULE IS A CRITICAL FAILURE:
 
+1. SUBJECT IDENTITY LOCK: The main subject (aircraft, vehicle, character, location) described in the original prompt MUST remain EXACTLY the same. If the prompt describes a "World War II P-51 Mustang", the modified prompt MUST still describe a "World War II P-51 Mustang" — never substitute a modern jet, different era aircraft, or different vehicle type. The subject's era, model, type, design features, markings, and visual DNA are IMMUTABLE unless the user explicitly asks to change the subject itself.
+
+2. MINIMAL DIFF PRINCIPLE: Compare your output to the original prompt. The difference should be as small as possible — like a surgical edit, not a rewrite. If the user says "change to top-angle view", you change ONLY the camera angle/perspective words. Everything else stays word-for-word identical.
+
+3. PRESERVE PROMPT LENGTH: Your output must be approximately the same length as the original. Do NOT shorten, summarize, or condense. Do NOT add lengthy new paragraphs. The original prompt's detail level is intentional.
+
+4. COPY-PASTE PRESERVATION: Sections of the original prompt that are unrelated to the feedback should appear WORD-FOR-WORD in your output. Do not rephrase, restructure, or "improve" parts the user didn't mention.
+
+5. ERA AND CONTEXT LOCK: If the scene is set in a specific historical era (WWII, Cold War, modern day, future), ALL elements must remain in that era. Do not introduce anachronistic elements.
+
+6. STYLE CONSISTENCY: The image style is Unreal Engine 5 cinematic 3D render — high-fidelity CGI with slight stylization. Maintain this unless the user explicitly requests a different style.
+
+${isCharacterPortrait ? "7. PORTRAIT FORMAT: This is a CHARACTER REFERENCE PORTRAIT — maintain the portrait format (medium close-up, clean background, direct eye contact) unless feedback specifically changes framing.\n" : ""}${contextBlock}
 ORIGINAL PROMPT:
 """
 ${originalPrompt}
 """
 
-USER FEEDBACK (what they want changed):
+USER FEEDBACK (the ONLY thing that should change):
 """
 ${userFeedback}
 """
 
-Apply the user's feedback to the original prompt. Make only the changes needed to address their feedback. Return ONLY the modified prompt text. No JSON, no explanation, no markdown. Just the prompt.`,
+Apply ONLY the user's feedback. Return the modified prompt text — nothing else. No JSON, no explanation, no markdown, no quotes around it.`,
       },
     ],
   });

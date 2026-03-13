@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, jsonb, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, jsonb, timestamp, boolean, real } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -11,6 +11,9 @@ export const projects = pgTable("projects", {
   analysis: jsonb("analysis"),
   analysisProgress: jsonb("analysis_progress"),
   voiceoverUrl: text("voiceover_url"),
+  analysisCost: real("analysis_cost").default(0),
+  imageGenerationCost: real("image_generation_cost").default(0),
+  videoGenerationCost: real("video_generation_cost").default(0),
 });
 
 export const insertProjectSchema = createInsertSchema(projects).omit({ id: true, analysis: true, analysisProgress: true });

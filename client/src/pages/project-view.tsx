@@ -134,6 +134,25 @@ export default function ProjectView() {
   const hasGeneratingVideos = images?.some((img) => img.videoStatus === "generating");
   const [regeneratingImageId, setRegeneratingImageId] = useState<string | null>(null);
   const [videoGeneratingImageId, setVideoGeneratingImageId] = useState<string | null>(null);
+
+  const [regenSeenGenerating, setRegenSeenGenerating] = useState(false);
+  const prevRegenIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (regeneratingImageId !== prevRegenIdRef.current) {
+      prevRegenIdRef.current = regeneratingImageId;
+      setRegenSeenGenerating(false);
+    }
+    if (!regeneratingImageId || !images) return;
+    const img = images.find(i => i.id === regeneratingImageId);
+    if (!img) return;
+    const isActive = img.status === "generating" || img.status === "pending";
+    if (isActive) {
+      setRegenSeenGenerating(true);
+    } else if (regenSeenGenerating) {
+      setRegeneratingImageId(null);
+      setRegenSeenGenerating(false);
+    }
+  }, [regeneratingImageId, images, regenSeenGenerating]);
   const [animatingSceneId, setAnimatingSceneId] = useState<string | null>(null);
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -381,7 +400,6 @@ export default function ProjectView() {
       });
     } catch (err: any) {
       toast({ title: "Regeneration failed", description: err.message, variant: "destructive" });
-    } finally {
       setRegeneratingImageId(null);
     }
   }, [id, toast, selectedImageModel]);
@@ -417,7 +435,6 @@ export default function ProjectView() {
       });
     } catch (err: any) {
       toast({ title: "Consistency regeneration failed", description: err.message, variant: "destructive" });
-    } finally {
       setRegeneratingImageId(null);
     }
   }, [id, toast, selectedImageModel]);
@@ -648,12 +665,17 @@ export default function ProjectView() {
   const analysisCost = totalScenes > 0 ? COST_ANALYSIS_BASE + (totalScenes * COST_ANALYSIS_PER_SCENE) : 0;
   const totalProjectCost = analysisCost + totalImageCost + totalVideoCost;
 
-  const analysisSpent = (project?.status !== "draft" && totalScenes > 0) ? analysisCost : 0;
-  const imagesSpent = (images?.filter((img) => img.status === "completed").length || 0) * currentImageModel.costPerImage;
-  const videosSpent = (images?.filter(img => img.videoStatus === "completed").reduce((sum, img) => {
+  const trackedAnalysisCost = (project as any)?.analysisCost || 0;
+  const trackedImageCost = (project as any)?.imageGenerationCost || 0;
+  const trackedVideoCost = (project as any)?.videoGenerationCost || 0;
+  const hasTrackedCosts = trackedAnalysisCost > 0 || trackedImageCost > 0 || trackedVideoCost > 0;
+
+  const analysisSpent = hasTrackedCosts ? trackedAnalysisCost : ((project?.status !== "draft" && totalScenes > 0) ? analysisCost : 0);
+  const imagesSpent = hasTrackedCosts ? trackedImageCost : ((images?.filter((img) => img.status === "completed").length || 0) * currentImageModel.costPerImage);
+  const videosSpent = hasTrackedCosts ? trackedVideoCost : ((images?.filter(img => img.videoStatus === "completed").reduce((sum, img) => {
     const model = VIDEO_MODELS.find(m => m.id === (img as any).videoModel) || VIDEO_MODELS[0];
     return sum + model.costPerClip;
-  }, 0)) || 0;
+  }, 0)) || 0);
   const totalSpent = analysisSpent + imagesSpent + videosSpent;
 
   if (projectLoading) {
@@ -701,7 +723,11 @@ export default function ProjectView() {
               </h1>
               <p className="text-sm text-muted-foreground mt-0.5">
                 {totalScenes} scenes &middot; {completedImages}/{totalExpected} images generated
-                {totalSpent > 0 && <> &middot; {formatCost(totalSpent)} spent</>}
+                {totalSpent > 0 && (
+                  <span className="text-green-400/80" title={`Analysis: ${formatCost(analysisSpent)} | Images: ${formatCost(imagesSpent)} | Videos: ${formatCost(videosSpent)}`}>
+                    {" "}&middot; {formatCost(totalSpent)} spent
+                  </span>
+                )}
                 {project.voiceoverUrl && (
                   <span className="inline-flex items-center gap-1 ml-2 text-blue-400">
                     <Volume2 className="w-3 h-3" /> Voiceover
@@ -1287,9 +1313,27 @@ export default function ProjectView() {
               <div className="glass-surface rounded-xl p-3 border border-green-500/10 bg-green-500/[0.02]">
                 <p className="text-muted-foreground text-xs mb-1">Spent So Far</p>
                 <p className="font-bold text-green-500">{formatCost(totalSpent)}</p>
-                <p className="text-[10px] text-muted-foreground mt-0.5">
-                  {analysisSpent > 0 ? "analysis + " : ""}{images?.filter((img) => img.status === "completed").length || 0} img + {images?.filter((img) => img.videoStatus === "completed").length || 0} vid
-                </p>
+                <div className="text-[10px] text-muted-foreground mt-1 space-y-0.5">
+                  {analysisSpent > 0 && (
+                    <div className="flex justify-between">
+                      <span>Analysis</span>
+                      <span className="text-green-400/80">{formatCost(analysisSpent)}</span>
+                    </div>
+                  )}
+                  {imagesSpent > 0 && (
+                    <div className="flex justify-between">
+                      <span>Images ({images?.filter((img) => img.status === "completed").length || 0} generated)</span>
+                      <span className="text-green-400/80">{formatCost(imagesSpent)}</span>
+                    </div>
+                  )}
+                  {videosSpent > 0 && (
+                    <div className="flex justify-between">
+                      <span>Videos ({completedClipsCount} clips)</span>
+                      <span className="text-green-400/80">{formatCost(videosSpent)}</span>
+                    </div>
+                  )}
+                  {totalSpent === 0 && <span>No costs incurred yet</span>}
+                </div>
               </div>
             </div>
           </Card>
