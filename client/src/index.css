@@ -538,4 +538,18 @@
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.2);
   }
+
+  .img-fade-in {
+    opacity: 0;
+    transition: opacity 0.3s ease-in;
+  }
+
+  .img-fade-in.loaded {
+    opacity: 1;
+  }
+
+  .scene-card {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 400px;
+  }
 }

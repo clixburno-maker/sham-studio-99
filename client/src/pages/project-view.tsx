@@ -1918,7 +1918,10 @@ function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: S
                                   <img
                                     src={proxyUrl(ref.imageUrl)}
                                     alt={`${char.name} - ${angleLabels[angle]}`}
-                                    className="w-20 h-20 object-cover rounded-xl border border-[var(--glass-border)] shadow-md ring-1 ring-white/[0.04] cursor-pointer hover:ring-primary/30 transition-all"
+                                    className="w-20 h-20 object-cover rounded-xl border border-[var(--glass-border)] shadow-md ring-1 ring-white/[0.04] cursor-pointer hover:ring-primary/30 transition-all img-fade-in"
+                                    loading="lazy"
+                                    decoding="async"
+                                    onLoad={(e) => e.currentTarget.classList.add("loaded")}
                                     onClick={() => setLightboxImage({ url: ref.imageUrl, name: char.name, angle })}
                                   />
                                   <div className="absolute inset-0 bg-black/60 backdrop-blur-sm rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center gap-1">
@@ -2175,7 +2178,7 @@ function StoryboardView({
         } catch {}
 
         return (
-          <div key={scene.id} data-testid={`card-scene-${index}`} className="relative pl-12">
+          <div key={scene.id} data-testid={`card-scene-${index}`} className="relative pl-12 scene-card">
             <div className="absolute left-0 top-5 flex flex-col items-center z-10">
               <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-primary/25 to-primary/10 border border-primary/20 flex items-center justify-center text-sm font-bold text-primary shadow-lg shadow-primary/5 backdrop-blur-sm">
                 {index + 1}
@@ -2469,10 +2472,12 @@ function StoryboardView({
                               <img
                                 src={proxyUrl(img.imageUrl)}
                                 alt={getShotLabel(scene, vi)}
-                                className="w-full h-full object-cover cursor-pointer"
+                                className="w-full h-full object-cover cursor-pointer img-fade-in"
                                 loading="lazy"
+                                decoding="async"
                                 onClick={() => setLightboxImage(img)}
                                 data-testid={`img-scene-${index}-variant-${vi}`}
+                                onLoad={(e) => e.currentTarget.classList.add("loaded")}
                                 onError={(e) => {
                                   const target = e.currentTarget;
                                   target.style.display = "none";
@@ -2843,7 +2848,7 @@ function GalleryView({
           if (sceneCompletedImages.length === 0) return null;
 
           return (
-            <div key={scene.id}>
+            <div key={scene.id} className="scene-card">
               <div className="flex items-center gap-2 mb-2 px-1">
                 <Badge variant="outline" className="text-[11px] glass-badge border-primary/15 rounded-lg font-medium">Scene {sceneIdx + 1}</Badge>
                 <p className="text-xs text-muted-foreground truncate">{scene.sceneDescription || scene.sentence}</p>
@@ -2861,8 +2866,10 @@ function GalleryView({
                       <img
                         src={proxyUrl(img.imageUrl)}
                         alt={shotLabel}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-cover img-fade-in"
                         loading="lazy"
+                        decoding="async"
+                        onLoad={(e) => e.currentTarget.classList.add("loaded")}
                         onError={(e) => {
                           const target = e.currentTarget;
                           target.style.display = "none";
@@ -3264,6 +3271,7 @@ function ClipsView({
                           alt="Video thumbnail"
                           className="w-full h-full object-cover"
                           loading="lazy"
+                          decoding="async"
                         />
                         <div className="absolute inset-0 flex items-center justify-center transition-opacity duration-200">
                           <div className="w-12 h-12 rounded-full bg-black/50 backdrop-blur-md border border-white/20 flex items-center justify-center invisible group-hover:visible transition-all duration-300 hover:scale-110 hover:bg-black/60 hover:border-white/30">
