@@ -130,9 +130,10 @@ export function getImageModelConfig(modelId?: string | null): ImageModelConfig {
   return IMAGE_MODELS.nanobanana;
 }
 
-export async function generateImage(prompt: string, referenceImageUrls?: string[], imageModelId?: ImageModelId): Promise<{ taskId: string }> {
-  if (!API_KEY) {
-    throw new Error("NANOBANANA_API_KEY is not configured. Please add your EvoLink API key in Secrets.");
+export async function generateImage(prompt: string, referenceImageUrls?: string[], imageModelId?: ImageModelId, userApiKey?: string): Promise<{ taskId: string }> {
+  const apiKey = userApiKey || API_KEY;
+  if (!apiKey) {
+    throw new Error("EvoLink API key is not configured. Please add your API key in Settings or set NANOBANANA_API_KEY.");
   }
 
   const model = getImageModelConfig(imageModelId);
@@ -155,7 +156,7 @@ export async function generateImage(prompt: string, referenceImageUrls?: string[
   const response = await fetch(`${API_BASE}/images/generations`, {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${API_KEY}`,
+      "Authorization": `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(bodyParams),
@@ -172,7 +173,7 @@ export async function generateImage(prompt: string, referenceImageUrls?: string[
       throw new Error("Insufficient credits on your EvoLink account. Please top up at evolink.ai to generate images.");
     }
     if (response.status === 401 || errCode === "invalid_api_key") {
-      throw new Error("API key is invalid or expired. Please check your NANOBANANA_API_KEY in Secrets.");
+      throw new Error("API key is invalid or expired. Please check your EvoLink API key in Settings.");
     }
     throw new Error(`Image generation failed (${model.name}): ${errMsg}`);
   }
@@ -437,14 +438,15 @@ export async function generateVideoLTX(imageUrl: string, prompt: string, duratio
   throw new Error("LTX Video generation failed: All retry attempts exhausted");
 }
 
-export async function generateVideo(imageUrl: string, prompt: string, modelId?: VideoModelId, durationOverride?: number): Promise<{ taskId: string; videoUrl?: string }> {
+export async function generateVideo(imageUrl: string, prompt: string, modelId?: VideoModelId, durationOverride?: number, userApiKey?: string): Promise<{ taskId: string; videoUrl?: string }> {
   if (modelId === "ltx23") {
     const result = await generateVideoLTX(imageUrl, prompt, durationOverride);
     return { taskId: `ltx-sync-${randomUUID()}`, videoUrl: result.videoUrl };
   }
 
-  if (!API_KEY) {
-    throw new Error("NANOBANANA_API_KEY is not configured. Please add your EvoLink API key in Secrets.");
+  const apiKey = userApiKey || API_KEY;
+  if (!apiKey) {
+    throw new Error("EvoLink API key is not configured. Please add your API key in Settings or set NANOBANANA_API_KEY.");
   }
 
   const model = getVideoModelConfig(modelId);
@@ -501,7 +503,7 @@ export async function generateVideo(imageUrl: string, prompt: string, modelId?: 
     const response = await fetch(`${API_BASE}/videos/generations`, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${API_KEY}`,
+        "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(bodyParams),
@@ -543,20 +545,21 @@ export async function generateVideo(imageUrl: string, prompt: string, modelId?: 
   throw new Error(`Video generation failed (${model.name}): All retry attempts exhausted`);
 }
 
-export async function checkVideoStatus(taskId: string): Promise<{
+export async function checkVideoStatus(taskId: string, userApiKey?: string): Promise<{
   status: string;
   videoUrl: string | null;
   progress: number;
   error?: string;
 }> {
-  if (!API_KEY) {
-    throw new Error("NANOBANANA_API_KEY is not configured");
+  const apiKey = userApiKey || API_KEY;
+  if (!apiKey) {
+    throw new Error("EvoLink API key is not configured. Please add your API key in Settings.");
   }
 
   const response = await fetch(`${API_BASE}/tasks/${taskId}`, {
     method: "GET",
     headers: {
-      "Authorization": `Bearer ${API_KEY}`,
+      "Authorization": `Bearer ${apiKey}`,
     },
   });
 
@@ -594,20 +597,21 @@ export async function checkVideoStatus(taskId: string): Promise<{
   };
 }
 
-export async function checkImageStatus(taskId: string): Promise<{
+export async function checkImageStatus(taskId: string, userApiKey?: string): Promise<{
   status: string;
   imageUrl: string | null;
   progress: number;
   error?: string;
 }> {
-  if (!API_KEY) {
-    throw new Error("NANOBANANA_API_KEY is not configured");
+  const apiKey = userApiKey || API_KEY;
+  if (!apiKey) {
+    throw new Error("EvoLink API key is not configured. Please add your API key in Settings.");
   }
 
   const response = await fetch(`${API_BASE}/tasks/${taskId}`, {
     method: "GET",
     headers: {
-      "Authorization": `Bearer ${API_KEY}`,
+      "Authorization": `Bearer ${apiKey}`,
     },
   });
 

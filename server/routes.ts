@@ -13,6 +13,20 @@ import { generateVoiceover, getVoices } from "./elevenlabs";
 import * as fs from "fs";
 import * as path from "path";
 
+interface UserApiKeys {
+  anthropic?: string;
+  elevenlabs?: string;
+  evolink?: string;
+}
+
+function extractUserKeys(req: any): UserApiKeys {
+  return {
+    anthropic: req.headers["x-user-anthropic-key"] as string | undefined,
+    elevenlabs: req.headers["x-user-elevenlabs-key"] as string | undefined,
+    evolink: req.headers["x-user-evolink-key"] as string | undefined,
+  };
+}
+
 function stripDialogue(text: string): string {
   let cleaned = text.replace(/"[^"]*"/g, "");
   cleaned = cleaned.replace(/'[^']*'/g, "");
@@ -269,6 +283,7 @@ export async function registerRoutes(
 
   app.post("/api/niches/:id/analyze", async (req, res) => {
     try {
+      const userKeys = extractUserKeys(req);
       const niche = await storage.getNiche(req.params.id);
       if (!niche) return res.status(404).json({ error: "Niche not found" });
 
@@ -325,7 +340,7 @@ export async function registerRoutes(
 
           advanceAnalysisStep(1, `Feeding ${usedVideos.length} scripts to AI for tone & pacing analysis...`);
 
-          const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+          const anthropic = new Anthropic({ apiKey: userKeys.anthropic || process.env.ANTHROPIC_API_KEY });
 
           const stylePromptContent = `You are a writing style analyst. Analyze these YouTube video transcripts from the same creator/channel and extract a detailed writing style profile. These are all from the channel "${niche.channelName}".
 
@@ -569,7 +584,8 @@ You MUST match this writing style exactly. Mimic the tone, sentence rhythm, voca
 
       const maxTokens = Math.max(8192, Math.min(Math.round(wordMax * 2), 32000));
 
-      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const userKeys = extractUserKeys(req);
+      const anthropic = new Anthropic({ apiKey: userKeys.anthropic || process.env.ANTHROPIC_API_KEY });
 
       const message = await anthropic.messages.create({
         model: "claude-opus-4-6",
@@ -668,11 +684,12 @@ Write the script now. Output ONLY the script text, nothing else.`,
   app.post("/api/generate-voiceover", async (req, res) => {
     try {
       const { text, voiceId, savedScriptId } = req.body;
+      const userKeys = extractUserKeys(req);
       if (!text) {
         return res.status(400).json({ error: "Text is required" });
       }
 
-      const audioBuffer = await generateVoiceover(text, voiceId);
+      const audioBuffer = await generateVoiceover(text, voiceId, userKeys.elevenlabs);
 
       const uploadsDir = path.join(process.cwd(), "uploads", "voiceovers");
       if (!fs.existsSync(uploadsDir)) {
@@ -788,6 +805,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
   app.post("/api/projects/:id/character-references/:refId/regenerate", async (req, res) => {
     try {
+      const userKeys = extractUserKeys(req);
       const ref = await storage.getCharacterReference(req.params.refId);
       if (!ref) return res.status(404).json({ error: "Character reference not found" });
       if (ref.projectId !== req.params.id) return res.status(400).json({ error: "Reference does not belong to this project" });
@@ -803,15 +821,15 @@ Write the script now. Output ONLY the script text, nothing else.`,
           let finalPrompt = ref.prompt;
           if (feedback && feedback.trim()) {
             console.log(`[char-ref] Applying feedback to portrait ${ref.characterName}: "${feedback}"`);
-            finalPrompt = await applyFeedbackToPrompt(ref.prompt, feedback, true);
+            finalPrompt = await applyFeedbackToPrompt(ref.prompt, feedback, true, undefined, userKeys.anthropic);
             console.log(`[char-ref] Modified prompt generated (${finalPrompt.length} chars)`);
           }
-          const { taskId } = await generateImage(finalPrompt, undefined, imgModel);
+          const { taskId } = await generateImage(finalPrompt, undefined, imgModel, userKeys.evolink);
           await storage.updateCharacterReference(ref.id, { status: "generating", taskId, prompt: finalPrompt });
         } catch (err: any) {
           console.error(`[char-ref] Feedback regeneration failed for ${ref.characterName}:`, err.message);
           try {
-            const { taskId } = await generateImage(ref.prompt, undefined, imgModel);
+            const { taskId } = await generateImage(ref.prompt, undefined, imgModel, userKeys.evolink);
             await storage.updateCharacterReference(ref.id, { status: "generating", taskId });
           } catch {
             await storage.updateCharacterReference(ref.id, { status: "failed" });
@@ -825,12 +843,13 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
   app.post("/api/projects/:id/character-references/poll", async (req, res) => {
     try {
+      const userKeys = extractUserKeys(req);
       const refs = await storage.getCharacterReferencesByProject(req.params.id);
       let updated = 0;
       for (const ref of refs) {
         if (ref.status === "generating" && ref.taskId) {
           try {
-            const result = await checkImageStatus(ref.taskId);
+            const result = await checkImageStatus(ref.taskId, userKeys.evolink);
             if (result.status === "completed" && result.imageUrl) {
               await storage.updateCharacterReference(ref.id, { status: "completed", imageUrl: result.imageUrl });
               updated++;
@@ -850,6 +869,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
   app.post("/api/projects/:id/generate-character-references", async (req, res) => {
     try {
+      const userKeys = extractUserKeys(req);
       const project = await storage.getProject(req.params.id);
       if (!project) return res.status(404).json({ error: "Project not found" });
       const analysis = project.analysis as ScriptAnalysis;
@@ -884,7 +904,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
         for (const angle of angles) {
           const prompt = `Unreal Engine 5 cinematic 3D render, high-fidelity CGI character reference sheet with slight stylization — NOT a photograph, ultra-detailed, 16:9 widescreen. FULL BODY STANDING PORTRAIT of ${char.name} — ${angle.label} — showing head to feet, entire body visible. ${char.appearance}. ${char.signatureFeatures ? `SIGNATURE FEATURES: ${char.signatureFeatures}.` : ""} Shot type: full-body standing pose, ${angle.poseInstruction}. The ENTIRE body from head to boots/shoes must be visible — do NOT crop at waist or chest. Clean solid neutral dark gray background with soft cinematic studio lighting — bright key light from upper right at 45 degrees, cool fill from left, strong rim light outlining the full body silhouette. Expression: neutral-confident, conveying authority and presence. High-fidelity CGI skin with subsurface scattering, highly detailed facial features clearly visible, detailed fabric textures on clothing/uniform with every button, insignia, pocket and accessory rendered accurately, detailed hands and footwear. This is a CHARACTER REFERENCE IMAGE (${angle.label}) — the purpose is to establish exactly what this character looks like from this specific angle for visual consistency in later scenes. Unreal Engine 5 quality render, NOT a real photograph. No text, no watermarks, no UI elements.`;
 
-          const { taskId } = await generateImage(prompt, undefined, imgModel);
+          const { taskId } = await generateImage(prompt, undefined, imgModel, userKeys.evolink);
           const ref = await storage.createCharacterReference({
             projectId: project.id,
             characterName: char.name,
@@ -1007,6 +1027,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
   app.post("/api/projects/:id/analyze", async (req, res) => {
     try {
+      const userKeys = extractUserKeys(req);
       const project = await storage.getProject(req.params.id);
       if (!project) return res.status(404).json({ error: "Project not found" });
 
@@ -1028,7 +1049,8 @@ Write the script now. Output ONLY the script text, nothing else.`,
             project.script,
             async (detail, current, total) => {
               await setProgressDb(project.id, "comprehending", detail, current, total);
-            }
+            },
+            userKeys.anthropic,
           );
 
           storyBibleCache.set(project.id, storyBible);
@@ -1067,8 +1089,9 @@ Write the script now. Output ONLY the script text, nothing else.`,
               let seqResult;
               try {
                 seqResult = await generateSequencePrompts(
-                  vs, index, visualOnlyScenes.length, storyBible, prevVs, nextVs, visualOnlyScenes
-                );
+                  vs, index, visualOnlyScenes.length, storyBible, prevVs, nextVs, visualOnlyScenes,
+                userKeys.anthropic,
+              );
               } catch (promptErr: any) {
                 console.error(`Scene ${index + 1} prompt generation failed: ${promptErr.message}. Using fallback prompts.`);
                 const fallbackPrompt = `Unreal Engine 5 cinematic 3D render, high-fidelity CGI with slight stylization — NOT a photograph, cinematic 8K, 16:9 widescreen aspect ratio. ${vs.visualBeat}. ${vs.mood} mood, ${vs.timeOfDay}, ${vs.location}. Cinematic military aviation CGI, Unreal Engine 5 quality, volumetric lighting, motion blur where appropriate, film grain, no text, no watermarks, no UI elements, no cartoons.`;
@@ -1160,7 +1183,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
                   for (const angle of autoAngles) {
                     const portraitPrompt = `Unreal Engine 5 cinematic 3D render, high-fidelity CGI character reference sheet with slight stylization — NOT a photograph, ultra-detailed, 16:9 widescreen. FULL BODY STANDING PORTRAIT of ${char.name} — ${angle.label} — showing head to feet, entire body visible. ${char.appearance}. ${char.signatureFeatures ? `SIGNATURE FEATURES: ${char.signatureFeatures}.` : ""} Shot type: full-body standing pose, ${angle.poseInstruction}. The ENTIRE body from head to boots/shoes must be visible — do NOT crop at waist or chest. Clean solid neutral dark gray background with soft cinematic studio lighting — bright key light from upper right at 45 degrees, cool fill from left, strong rim light outlining the full body silhouette. Expression: neutral-confident, conveying authority and presence. High-fidelity CGI skin with subsurface scattering, highly detailed facial features clearly visible, detailed fabric textures on clothing/uniform with every button, insignia, pocket and accessory rendered accurately, detailed hands and footwear. This is a CHARACTER REFERENCE IMAGE (${angle.label}) — the purpose is to establish exactly what this character looks like from this specific angle for visual consistency in later scenes. Unreal Engine 5 quality render, NOT a real photograph. No text, no watermarks, no UI elements.`;
                     try {
-                      const { taskId } = await generateImage(portraitPrompt);
+                      const { taskId } = await generateImage(portraitPrompt, undefined, undefined, userKeys.evolink);
                       await storage.createCharacterReference({
                         projectId: project.id,
                         characterName: char.name,
@@ -1204,6 +1227,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
   app.post("/api/projects/:id/scenes/:sceneId/generate", async (req, res) => {
     try {
+      const userKeys = extractUserKeys(req);
       const project = await storage.getProject(req.params.id);
       if (!project) return res.status(404).json({ error: "Project not found" });
 
@@ -1241,8 +1265,9 @@ Write the script now. Output ONLY the script text, nothing else.`,
           const nextVs = sceneIndex < cachedVisualScenes.length - 1 ? cachedVisualScenes[sceneIndex + 1] : null;
 
           const seqResult = await generateSequencePrompts(
-            vs, sceneIndex, cachedVisualScenes.length, storyBible, prevVs, nextVs, cachedVisualScenes
-          );
+            vs, sceneIndex, cachedVisualScenes.length, storyBible, prevVs, nextVs, cachedVisualScenes,
+          userKeys.anthropic,
+        );
           prompts = seqResult.prompts;
           motionPrompts = seqResult.motionPrompts;
           await storage.updateScene(scene.id, {
@@ -1295,8 +1320,9 @@ Write the script now. Output ONLY the script text, nothing else.`,
           } : null;
 
           const seqResult = await generateSequencePrompts(
-            fallbackScene, sceneIndex, scenes.length, fallbackBible, prevVs, nextVs, [fallbackScene]
-          );
+            fallbackScene, sceneIndex, scenes.length, fallbackBible, prevVs, nextVs, [fallbackScene],
+          userKeys.anthropic,
+        );
           prompts = seqResult.prompts;
           motionPrompts = seqResult.motionPrompts;
           await storage.updateScene(scene.id, {
@@ -1321,7 +1347,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
         try {
           const sceneGenModelConfig = getImageModelConfig(imgModel);
-          const { taskId } = await generateImage(prompt, charRefUrls.length > 0 ? charRefUrls : undefined, imgModel);
+          const { taskId } = await generateImage(prompt, charRefUrls.length > 0 ? charRefUrls : undefined, imgModel, userKeys.evolink);
           storage.addProjectCost(project.id, "imageGenerationCost", sceneGenModelConfig.costPerImage).catch(() => {});
           const img = await storage.createImage({
             sceneId: scene.id,
@@ -1367,6 +1393,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
   app.post("/api/projects/:id/generate-all", async (req, res) => {
     try {
+      const userKeys = extractUserKeys(req);
       const project = await storage.getProject(req.params.id);
       if (!project) return res.status(404).json({ error: "Project not found" });
 
@@ -1418,8 +1445,9 @@ Write the script now. Output ONLY the script text, nothing else.`,
             const nextVs = si < cachedVisualScenes.length - 1 ? cachedVisualScenes[si + 1] : null;
 
             const seqResult = await generateSequencePrompts(
-              vs, si, cachedVisualScenes.length, storyBible, prevVs, nextVs, cachedVisualScenes
-            );
+              vs, si, cachedVisualScenes.length, storyBible, prevVs, nextVs, cachedVisualScenes,
+            userKeys.anthropic,
+          );
             prompts = seqResult.prompts;
             motionPrompts = seqResult.motionPrompts;
           }
@@ -1556,7 +1584,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
               try {
                 const modelConfig = getImageModelConfig(imgModel);
-                const { taskId } = await generateImage(item.prompt, item.charRefUrls.length > 0 ? item.charRefUrls : undefined, imgModel);
+                const { taskId } = await generateImage(item.prompt, item.charRefUrls.length > 0 ? item.charRefUrls : undefined, imgModel, userKeys.evolink);
                 const img = await storage.createImage({
                   sceneId: item.sceneId,
                   projectId: item.projectId,
@@ -1692,7 +1720,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
               await Promise.all(
                 pollBatch.map(async (img) => {
                   try {
-                    const result = await checkImageStatus(img.taskId!);
+                    const result = await checkImageStatus(img.taskId!, userKeys.evolink);
                     if (result.status === "completed" && result.imageUrl) {
                       await storage.updateImage(img.id, { status: "completed", imageUrl: result.imageUrl });
                     } else if (result.status === "failed") {
@@ -1793,12 +1821,13 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
   app.post("/api/images/:imageId/check", async (req, res) => {
     try {
+      const userKeys = extractUserKeys(req);
       const img = await storage.getImageById(req.params.imageId);
       if (!img) return res.status(404).json({ error: "Image not found" });
       if (!img.taskId) return res.json(img);
       if (img.status === "completed" || img.status === "failed") return res.json(img);
 
-      const result = await checkImageStatus(img.taskId);
+      const result = await checkImageStatus(img.taskId, userKeys.evolink);
       if (result.status === "completed" && result.imageUrl) {
         const updated = await storage.updateImage(img.id, {
           status: "completed",
@@ -1818,6 +1847,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
   app.post("/api/projects/:id/images/:imageId/regenerate", async (req, res) => {
     try {
+      const userKeys = extractUserKeys(req);
       const img = await storage.getImageById(req.params.imageId);
       if (!img) return res.status(404).json({ error: "Image not found" });
       if (img.projectId !== req.params.id) return res.status(400).json({ error: "Image does not belong to this project" });
@@ -1856,7 +1886,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
               mood,
               shotLabel,
               storyBible,
-            });
+            }, userKeys.anthropic);
             console.log(`Feedback regeneration: Modified prompt generated (${improvedPrompt.length} chars). Generating image...`);
           } else {
             console.log(`Smart regeneration: Analyzing prompt for image ${img.id}...`);
@@ -1866,13 +1896,14 @@ Write the script now. Output ONLY the script text, nothing else.`,
               shotLabel,
               mood,
               storyBible,
+              userKeys.anthropic,
             );
             console.log(`Smart regeneration: Improved prompt generated (${improvedPrompt.length} chars). Generating image...`);
           }
 
           const charRefUrls = scene ? await getCharacterReferenceUrlsForScene(req.params.id, scene) : [];
           const regenModelConfig = getImageModelConfig(imgModel);
-          const { taskId } = await generateImage(improvedPrompt, charRefUrls.length > 0 ? charRefUrls : undefined, imgModel);
+          const { taskId } = await generateImage(improvedPrompt, charRefUrls.length > 0 ? charRefUrls : undefined, imgModel, userKeys.evolink);
           await storage.updateImage(img.id, {
             status: "generating",
             taskId,
@@ -1884,7 +1915,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
           try {
             console.log(`Falling back to original prompt for image ${img.id}`);
             const fallbackModelConfig = getImageModelConfig(imgModel);
-            const { taskId } = await generateImage(img.prompt, undefined, imgModel);
+            const { taskId } = await generateImage(img.prompt, undefined, imgModel, userKeys.evolink);
             await storage.updateImage(img.id, {
               status: "generating",
               taskId,
@@ -1906,6 +1937,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
   app.post("/api/projects/:id/scenes/:sceneId/regenerate-with-feedback", async (req, res) => {
     try {
+      const userKeys = extractUserKeys(req);
       const project = await storage.getProject(req.params.id);
       if (!project) return res.status(404).json({ error: "Project not found" });
 
@@ -1936,12 +1968,12 @@ Write the script now. Output ONLY the script text, nothing else.`,
               mood: scene.mood || "cinematic",
               shotLabel: (() => { try { const labels = scene.shotLabels ? JSON.parse(scene.shotLabels) : []; return labels[img.variant - 1] || "Cinematic Shot"; } catch { return "Cinematic Shot"; } })(),
               storyBible,
-            });
+            }, userKeys.anthropic);
             console.log(`Scene feedback regen: Improved prompt for image ${img.id} (${improvedPrompt.length} chars)`);
 
             const charRefUrls = scene ? await getCharacterReferenceUrlsForScene(project.id, scene) : [];
             const scnModelConfig = getImageModelConfig(imgModel);
-            const { taskId } = await generateImage(improvedPrompt, charRefUrls.length > 0 ? charRefUrls : undefined, imgModel);
+            const { taskId } = await generateImage(improvedPrompt, charRefUrls.length > 0 ? charRefUrls : undefined, imgModel, userKeys.evolink);
             await storage.updateImage(img.id, {
               status: "generating",
               taskId,
@@ -1952,7 +1984,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
             console.error(`Scene feedback regen failed for image ${img.id}:`, err.message);
             try {
               const fallbackScnConfig = getImageModelConfig(imgModel);
-              const { taskId } = await generateImage(img.prompt, undefined, imgModel);
+              const { taskId } = await generateImage(img.prompt, undefined, imgModel, userKeys.evolink);
               await storage.updateImage(img.id, { status: "generating", taskId });
               storage.addProjectCost(project.id, "imageGenerationCost", fallbackScnConfig.costPerImage).catch(() => {});
             } catch (fallbackErr: any) {
@@ -1970,6 +2002,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
   app.post("/api/projects/:id/images/:imageId/regenerate-with-consistency", async (req, res) => {
     try {
+      const userKeys = extractUserKeys(req);
       const img = await storage.getImageById(req.params.imageId);
       if (!img) return res.status(404).json({ error: "Image not found" });
       if (img.projectId !== req.params.id) return res.status(400).json({ error: "Image does not belong to this project" });
@@ -1989,7 +2022,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
           }
           console.log(`[consistency-regen] Regenerating image ${img.id} with ${charRefUrls.length} character reference(s)`);
           const consistModelConfig = getImageModelConfig(imgModel);
-          const { taskId } = await generateImage(img.prompt, charRefUrls.length > 0 ? charRefUrls : undefined, imgModel);
+          const { taskId } = await generateImage(img.prompt, charRefUrls.length > 0 ? charRefUrls : undefined, imgModel, userKeys.evolink);
           await storage.updateImage(img.id, { status: "generating", taskId });
           storage.addProjectCost(req.params.id, "imageGenerationCost", consistModelConfig.costPerImage).catch(() => {});
         } catch (err: any) {
@@ -2004,6 +2037,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
   app.post("/api/projects/:id/scenes/:sceneId/regenerate-with-consistency", async (req, res) => {
     try {
+      const userKeys = extractUserKeys(req);
       const project = await storage.getProject(req.params.id);
       if (!project) return res.status(404).json({ error: "Project not found" });
 
@@ -2029,7 +2063,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
         const scnConsistModelConfig = getImageModelConfig(imgModel);
         for (const img of sceneImages) {
           try {
-            const { taskId } = await generateImage(img.prompt, charRefUrls.length > 0 ? charRefUrls : undefined, imgModel);
+            const { taskId } = await generateImage(img.prompt, charRefUrls.length > 0 ? charRefUrls : undefined, imgModel, userKeys.evolink);
             await storage.updateImage(img.id, { status: "generating", taskId });
             storage.addProjectCost(project.id, "imageGenerationCost", scnConsistModelConfig.costPerImage).catch(() => {});
           } catch (err: any) {
@@ -2056,6 +2090,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
   app.post("/api/projects/:id/retry-failed", async (req, res) => {
     try {
+      const userKeys = extractUserKeys(req);
       const project = await storage.getProject(req.params.id);
       if (!project) return res.status(404).json({ error: "Project not found" });
 
@@ -2130,7 +2165,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
                 const scene = await storage.getScene(img.sceneId);
                 const charRefUrls = scene ? await getCharacterReferenceUrlsForScene(project.id, scene) : [];
                 const retryModelConfig = getImageModelConfig(imgModel);
-                const { taskId } = await generateImage(img.prompt, charRefUrls.length > 0 ? charRefUrls : undefined, imgModel);
+                const { taskId } = await generateImage(img.prompt, charRefUrls.length > 0 ? charRefUrls : undefined, imgModel, userKeys.evolink);
                 await storage.updateImage(img.id, { status: "generating", taskId, imageUrl: null });
                 waveImageIds.push(img.id);
                 progress.submitted++;
@@ -2206,7 +2241,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
               await Promise.all(
                 pollBatch.map(async (img) => {
                   try {
-                    const result = await checkImageStatus(img.taskId!);
+                    const result = await checkImageStatus(img.taskId!, userKeys.evolink);
                     if (result.status === "completed" && result.imageUrl) {
                       await storage.updateImage(img.id, { status: "completed", imageUrl: result.imageUrl });
                     } else if (result.status === "failed") {
@@ -2275,6 +2310,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
   app.post("/api/projects/:id/smart-regenerate", async (req, res) => {
     try {
+      const userKeys = extractUserKeys(req);
       const project = await storage.getProject(req.params.id);
       if (!project) return res.status(404).json({ error: "Project not found" });
 
@@ -2339,7 +2375,8 @@ Write the script now. Output ONLY the script text, nothing else.`,
                 shotLabel,
                 mood,
                 storyBible,
-              );
+              userKeys.anthropic,
+            );
               console.log(`Smart batch regen: Improved prompt for image ${img.id} (${improvedPrompt.length} chars)`);
             } catch (promptErr: any) {
               console.error(`Smart batch regen: Failed to improve prompt for ${img.id}, using original:`, promptErr.message);
@@ -2356,7 +2393,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
             const charRefUrls = scene ? await getCharacterReferenceUrlsForScene(project.id, scene) : [];
             const smartModelConfig = getImageModelConfig(imgModel);
-            const { taskId } = await generateImage(improvedPrompt, charRefUrls.length > 0 ? charRefUrls : undefined, imgModel);
+            const { taskId } = await generateImage(improvedPrompt, charRefUrls.length > 0 ? charRefUrls : undefined, imgModel, userKeys.evolink);
             storage.addProjectCost(project.id, "imageGenerationCost", smartModelConfig.costPerImage).catch(() => {});
             await storage.updateImage(img.id, {
               status: "generating",
@@ -2402,6 +2439,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
   app.post("/api/projects/:id/animate-all-videos", async (req, res) => {
     try {
+      const userKeys = extractUserKeys(req);
       const videoModel = (req.body?.videoModel as VideoModelId) || "grok";
       const videoDuration = req.body?.videoDuration ? parseInt(req.body.videoDuration) : undefined;
       const model = getVideoModelConfig(videoModel);
@@ -2459,14 +2497,15 @@ Write the script now. Output ONLY the script text, nothing else.`,
                 videoDuration || model.duration,
                 storyBible,
                 videoModel,
-              );
+              userKeys.anthropic,
+            );
             } catch (aiErr: any) {
               console.warn(`[animate-all-videos] AI motion prompt failed for image ${img.id}, using fallback`);
               videoPromptFinal = buildVideoPrompt(img.videoPrompt, img.prompt);
             }
 
             const effectiveDuration = (videoModel === "kling" && videoDuration) ? videoDuration : undefined;
-            const result = await generateVideo(img.imageUrl!, videoPromptFinal, videoModel, effectiveDuration);
+            const result = await generateVideo(img.imageUrl!, videoPromptFinal, videoModel, effectiveDuration, userKeys.evolink);
             storage.addProjectCost(req.params.id, "videoGenerationCost", model.costPerClip).catch(() => {});
             if (result.videoUrl) {
               await storage.updateImage(img.id, {
@@ -2517,6 +2556,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
   app.post("/api/projects/:id/scenes/:sceneId/animate-all", async (req, res) => {
     try {
+      const userKeys = extractUserKeys(req);
       const videoModel = (req.body?.videoModel as VideoModelId) || "grok";
       const videoDuration = req.body?.videoDuration ? parseInt(req.body.videoDuration) : undefined;
       const model = getVideoModelConfig(videoModel);
@@ -2559,14 +2599,15 @@ Write the script now. Output ONLY the script text, nothing else.`,
               videoDuration || model.duration,
               storyBible,
               videoModel,
-            );
+            userKeys.anthropic,
+          );
           } catch (aiErr: any) {
             console.warn(`[animate-all] AI motion prompt failed for image ${img.id}, using fallback: ${aiErr.message}`);
             videoPromptFinal = buildVideoPrompt(img.videoPrompt, img.prompt);
           }
 
           const effectiveDuration = (videoModel === "kling" && videoDuration) ? videoDuration : undefined;
-          const result = await generateVideo(img.imageUrl!, videoPromptFinal, videoModel, effectiveDuration);
+          const result = await generateVideo(img.imageUrl!, videoPromptFinal, videoModel, effectiveDuration, userKeys.evolink);
           storage.addProjectCost(req.params.id, "videoGenerationCost", model.costPerClip).catch(() => {});
           if (result.videoUrl) {
             const updated = await storage.updateImage(img.id, {
@@ -2604,6 +2645,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
     let img: any = null;
     let videoModel: VideoModelId = "grok";
     try {
+      const userKeys = extractUserKeys(req);
       videoModel = (req.body?.videoModel as VideoModelId) || "grok";
       const videoDuration = req.body?.videoDuration ? parseInt(req.body.videoDuration) : undefined;
       const modelConfig = getVideoModelConfig(videoModel);
@@ -2638,14 +2680,15 @@ Write the script now. Output ONLY the script text, nothing else.`,
           effectiveDuration,
           storyBible,
           videoModel,
-        );
+        userKeys.anthropic,
+      );
         console.log(`[video-gen] AI motion prompt generated: ${videoPromptFinal.substring(0, 200)}...`);
       } catch (aiErr: any) {
         console.warn(`[video-gen] AI motion prompt failed, falling back to buildVideoPrompt: ${aiErr.message}`);
         videoPromptFinal = buildVideoPrompt(img.videoPrompt, img.prompt);
       }
 
-      const result = await generateVideo(img.imageUrl, videoPromptFinal, videoModel, videoDuration);
+      const result = await generateVideo(img.imageUrl, videoPromptFinal, videoModel, videoDuration, userKeys.evolink);
       storage.addProjectCost(img.projectId, "videoGenerationCost", modelConfig.costPerClip).catch(() => {});
       if (result.videoUrl) {
         const updated = await storage.updateImage(img.id, {
@@ -2683,6 +2726,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
   app.post("/api/projects/:id/images/:imageId/regenerate-video-with-feedback", async (req, res) => {
     try {
+      const userKeys = extractUserKeys(req);
       const { feedback, videoModel: requestedModel, videoDuration: requestedDuration } = req.body || {};
       if (!feedback || typeof feedback !== "string" || feedback.trim().length === 0) {
         return res.status(400).json({ error: "Feedback text is required" });
@@ -2727,14 +2771,15 @@ Write the script now. Output ONLY the script text, nothing else.`,
           effectiveDuration,
           storyBible,
           videoModel,
-        );
+        userKeys.anthropic,
+      );
         console.log(`[video-regen-feedback] New motion prompt: ${videoPromptFinal.substring(0, 200)}`);
       } catch (aiErr: any) {
         console.warn(`[video-regen-feedback] AI prompt generation failed, using fallback: ${aiErr.message}`);
         videoPromptFinal = buildVideoPrompt(img.videoPrompt, img.prompt);
       }
 
-      const result = await generateVideo(img.imageUrl, videoPromptFinal, videoModel, videoDuration);
+      const result = await generateVideo(img.imageUrl, videoPromptFinal, videoModel, videoDuration, userKeys.evolink);
       storage.addProjectCost(req.params.id, "videoGenerationCost", modelConfig.costPerClip).catch(() => {});
       if (result.videoUrl) {
         const updated = await storage.updateImage(img.id, {
@@ -2765,6 +2810,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
   app.post("/api/projects/:id/scenes/:sceneId/regenerate-videos-with-feedback", async (req, res) => {
     try {
+      const userKeys = extractUserKeys(req);
       const { feedback, videoModel: requestedModel, videoDuration: requestedDuration } = req.body || {};
       if (!feedback || typeof feedback !== "string" || feedback.trim().length === 0) {
         return res.status(400).json({ error: "Feedback text is required" });
@@ -2828,12 +2874,13 @@ Write the script now. Output ONLY the script text, nothing else.`,
                 effectiveDuration,
                 storyBible,
                 videoModel,
-              );
+              userKeys.anthropic,
+            );
             } catch {
               videoPromptFinal = buildVideoPrompt(img.videoPrompt, img.prompt);
             }
 
-            const result = await generateVideo(img.imageUrl!, videoPromptFinal, videoModel, videoDuration);
+            const result = await generateVideo(img.imageUrl!, videoPromptFinal, videoModel, videoDuration, userKeys.evolink);
             storage.addProjectCost(req.params.id, "videoGenerationCost", modelConfig.costPerClip).catch(() => {});
             if (result.videoUrl) {
               await storage.updateImage(img.id, {
@@ -2873,6 +2920,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
   app.post("/api/images/:imageId/check-video", async (req, res) => {
     try {
+      const userKeys = extractUserKeys(req);
       const img = await storage.getImageById(req.params.imageId);
       if (!img) return res.status(404).json({ error: "Image not found" });
       if (!img.videoTaskId) return res.json(img);
@@ -2882,7 +2930,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
         return res.json(img);
       }
 
-      const result = await checkVideoStatus(img.videoTaskId);
+      const result = await checkVideoStatus(img.videoTaskId, userKeys.evolink);
       if (result.status === "completed" && result.videoUrl) {
         const updated = await storage.updateImage(img.id, {
           videoStatus: "completed",
@@ -2902,7 +2950,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
           try {
             const retryPrompt = img.videoPromptSent || buildVideoPrompt(img.videoPrompt, img.prompt);
             const retryVideoConfig = getVideoModelConfig(img.videoModel as any);
-            const retryResult = await generateVideo(img.imageUrl, retryPrompt, img.videoModel as any);
+            const retryResult = await generateVideo(img.imageUrl, retryPrompt, img.videoModel as any, undefined, userKeys.evolink);
             storage.addProjectCost(img.projectId, "videoGenerationCost", retryVideoConfig.costPerVideo).catch(() => {});
             if (retryResult.videoUrl) {
               const updated = await storage.updateImage(img.id, {
@@ -2938,6 +2986,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
   app.post("/api/projects/:id/poll-videos", async (req, res) => {
     try {
+      const userKeys = extractUserKeys(req);
       const images = await storage.getImagesByProject(req.params.id);
       const pendingVideos = images.filter((img) => img.videoStatus === "generating" && img.videoTaskId);
 
@@ -2945,7 +2994,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
         try {
           if (img.videoTaskId?.startsWith("ltx-sync-")) continue;
 
-          const result = await checkVideoStatus(img.videoTaskId!);
+          const result = await checkVideoStatus(img.videoTaskId!, userKeys.evolink);
           if (result.status === "completed" && result.videoUrl) {
             await storage.updateImage(img.id, {
               videoStatus: "completed",
@@ -2964,7 +3013,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
               try {
                 const retryPrompt = img.videoPromptSent || buildVideoPrompt(img.videoPrompt, img.prompt);
                 const retryVideoConfig2 = getVideoModelConfig(img.videoModel as any);
-                const retryResult = await generateVideo(img.imageUrl, retryPrompt, img.videoModel as any);
+                const retryResult = await generateVideo(img.imageUrl, retryPrompt, img.videoModel as any, undefined, userKeys.evolink);
                 storage.addProjectCost(img.projectId, "videoGenerationCost", retryVideoConfig2.costPerVideo).catch(() => {});
                 if (retryResult.videoUrl) {
                   await storage.updateImage(img.id, {
@@ -3001,6 +3050,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
   app.post("/api/projects/:id/poll-images", async (req, res) => {
     try {
+      const userKeys = extractUserKeys(req);
       const images = await storage.getImagesByProject(req.params.id);
       const pendingImages = images.filter((img) => img.status === "generating" && img.taskId);
 
@@ -3011,7 +3061,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
         const batchResults = await Promise.all(
           batch.map(async (img) => {
             try {
-              const result = await checkImageStatus(img.taskId!);
+              const result = await checkImageStatus(img.taskId!, userKeys.evolink);
               if (result.status === "completed" && result.imageUrl) {
                 return await storage.updateImage(img.id, {
                   status: "completed",

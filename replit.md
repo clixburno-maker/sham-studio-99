@@ -138,9 +138,23 @@ Once a project exists, the system analyzes the script using Claude Opus 4.6, bui
 - `GET /api/niches/:id/videos` - Get stored video transcripts for a niche
 - `POST /api/niches/:id/retrain` - Re-train a niche (re-extract transcripts + re-analyze style)
 
+## Per-User API Key Support (BYOK)
+- Users can provide their own API keys via the **API Keys** settings dialog on the dashboard
+- Keys are stored in `localStorage` (client-side only, never sent to the database)
+- Three keys supported: Anthropic (Claude), ElevenLabs (voiceover), EvoLink/NanoBanana (images/video)
+- Client sends keys as custom headers on every request: `x-user-anthropic-key`, `x-user-elevenlabs-key`, `x-user-evolink-key`
+- `client/src/lib/api-keys.ts` — localStorage storage, `getApiHeaders()` helper, `maskKey()` display
+- `client/src/lib/queryClient.ts` — Injects API key headers into all `apiRequest()` and TanStack Query fetch calls
+- `client/src/components/api-key-settings.tsx` — Settings dialog component with set/clear/mask/reveal per key
+- Server-side: `extractUserKeys(req)` helper in `routes.ts` extracts headers from each request
+- Service modules accept optional `userApiKey` parameter: falls back to environment variable if not provided
+  - `ai-analyzer.ts`: `getAnthropicClient(userApiKey)` creates per-request Anthropic client
+  - `nanobanana.ts`: `generateImage()`, `generateVideo()`, `checkImageStatus()`, `checkVideoStatus()` accept optional key
+  - `elevenlabs.ts`: `generateVoiceover()` accepts optional key
+
 ## Secrets
-- `ANTHROPIC_API_KEY` - API key from Anthropic for Claude analysis and script writing
-- `ELEVENLABS_API_KEY` - API key from ElevenLabs for voiceover generation
-- `NANOBANANA_API_KEY` - API key from EvoLink.AI for image generation and video generation
+- `ANTHROPIC_API_KEY` - API key from Anthropic for Claude analysis and script writing (fallback when no user key)
+- `ELEVENLABS_API_KEY` - API key from ElevenLabs for voiceover generation (fallback when no user key)
+- `NANOBANANA_API_KEY` - API key from EvoLink.AI for image generation and video generation (fallback when no user key)
 - `YOUTUBE_TRANSCRIPT_API_KEY` - API key from youtube-transcript.io for YouTube transcript extraction
 - `DATABASE_URL` - PostgreSQL connection string

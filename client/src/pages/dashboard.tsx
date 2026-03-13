@@ -10,6 +10,7 @@ import type { Project } from "@shared/schema";
 import { useState, useEffect } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { ApiKeySettings } from "@/components/api-key-settings";
 
 const toolCards = [
   {
@@ -84,6 +85,10 @@ export default function Dashboard() {
   return (
     <div className="min-h-full p-6 md:p-10">
       <div className="max-w-5xl mx-auto">
+        <div className="flex justify-end mb-4">
+          <ApiKeySettings />
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-14">
           {toolCards.map((card) => (
             <Card key={card.title} className="glass-card rounded-2xl p-5 shimmer-border group transition-all duration-300 hover:scale-[1.01]">

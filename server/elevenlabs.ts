@@ -42,10 +42,12 @@ export async function getVoices(): Promise<Voice[]> {
 
 export async function generateVoiceover(
   text: string,
-  voiceId: string = "Brian"
+  voiceId: string = "Brian",
+  userApiKey?: string
 ): Promise<Buffer> {
-  if (!ELEVENLABS_API_KEY) {
-    throw new Error("ELEVENLABS_API_KEY is not configured");
+  const apiKey = userApiKey || ELEVENLABS_API_KEY;
+  if (!apiKey) {
+    throw new Error("ElevenLabs API key is not configured. Please add your API key in Settings or set ELEVENLABS_API_KEY.");
   }
 
   let resolvedId = voiceId;
@@ -59,7 +61,7 @@ export async function generateVoiceover(
   const res = await fetch(`${ELEVENLABS_API_URL}/text-to-speech/${resolvedId}`, {
     method: "POST",
     headers: {
-      "xi-api-key": ELEVENLABS_API_KEY,
+      "xi-api-key": apiKey,
       "Content-Type": "application/json",
       "Accept": "audio/mpeg",
     },

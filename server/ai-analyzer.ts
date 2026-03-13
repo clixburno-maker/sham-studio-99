@@ -1,9 +1,16 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { ScriptAnalysis } from "@shared/schema";
 
-const anthropic = new Anthropic({
+const defaultAnthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
+
+function getAnthropicClient(userApiKey?: string): Anthropic {
+  if (userApiKey) {
+    return new Anthropic({ apiKey: userApiKey });
+  }
+  return defaultAnthropic;
+}
 
 export interface StoryBible {
   analysis: ScriptAnalysis;
@@ -489,8 +496,8 @@ function validateAndFillSentenceCoverage(
   return allScenes;
 }
 
-async function analyzeStoryBibleOnly(script: string): Promise<StoryBible> {
-  const stream = anthropic.messages.stream({
+async function analyzeStoryBibleOnly(script: string, userApiKey?: string): Promise<StoryBible> {
+  const stream = getAnthropicClient(userApiKey).messages.stream({
     model: "claude-opus-4-6",
     max_tokens: 128000,
     messages: [
@@ -632,6 +639,7 @@ async function analyzeVisualScenesChunk(
   storyBible: StoryBible,
   chunkNumber: number,
   totalChunks: number,
+  userApiKey?: string,
 ): Promise<VisualScene[]> {
   const chunkSentences = sentences.slice(startIndex, endIndex);
   const numberedSentences = chunkSentences.map((s, i) => `[${startIndex + i}] ${s}`).join("\n");
@@ -656,7 +664,7 @@ async function analyzeVisualScenesChunk(
     `${l.name}: ${l.description}. Visual Fingerprint: ${l.signatureFeatures || "See visual details"}`
   ).join("\n");
 
-  const stream = anthropic.messages.stream({
+  const stream = getAnthropicClient(userApiKey).messages.stream({
     model: "claude-opus-4-6",
     max_tokens: 128000,
     messages: [
@@ -816,7 +824,8 @@ CRITICAL RULES:
 
 export async function analyzeFullStory(
   script: string,
-  onProgress?: (detail: string, current: number, total: number) => void
+  onProgress?: (detail: string, current: number, total: number) => void,
+  userApiKey?: string
 ): Promise<{ storyBible: StoryBible; visualScenes: VisualScene[] }> {
   const sentences = splitIntoSentences(script);
   const CHUNK_THRESHOLD = 150;
@@ -825,7 +834,7 @@ export async function analyzeFullStory(
     console.log(`Long script detected: ${sentences.length} sentences. Using chunked analysis.`);
 
     onProgress?.("AI is reading your entire script to build a comprehensive Story Bible...", 1, 4);
-    const storyBible = await analyzeStoryBibleOnly(script);
+    const storyBible = await analyzeStoryBibleOnly(script, userApiKey);
 
     const CHUNK_SIZE = 50;
     const chunks: { start: number; end: number }[] = [];
@@ -850,6 +859,7 @@ export async function analyzeFullStory(
         storyBible,
         c + 1,
         chunks.length,
+        userApiKey,
       );
       allVisualScenes = allVisualScenes.concat(chunkScenes);
     }
@@ -860,7 +870,7 @@ export async function analyzeFullStory(
 
   onProgress?.("AI is reading your entire script to understand the full story...", 1, 4);
 
-  const stream = anthropic.messages.stream({
+  const stream = getAnthropicClient(userApiKey).messages.stream({
     model: "claude-opus-4-6",
     max_tokens: 128000,
     messages: [
@@ -1100,6 +1110,7 @@ export async function generateSequencePrompts(
   prevScene: VisualScene | null,
   nextScene: VisualScene | null,
   allScenes: VisualScene[],
+  userApiKey?: string,
 ): Promise<SceneSequencePrompts> {
   const analysis = storyBible.analysis;
 
@@ -1184,7 +1195,7 @@ Mood: ${nextScene.mood}
 The last image of THIS scene should visually bridge toward the next scene.`
     : "This is the FINAL scene of the story — end with visual closure and emotional resolution.";
 
-  const stream = anthropic.messages.stream({
+  const stream = getAnthropicClient(userApiKey).messages.stream({
     model: "claude-opus-4-6",
     max_tokens: 128000,
     messages: [
@@ -1518,6 +1529,7 @@ export async function analyzeAndImprovePrompt(
   shotLabel: string,
   mood: string,
   storyBible: StoryBible | null,
+  userApiKey?: string,
 ): Promise<string> {
   const analysis = storyBible?.analysis;
 
@@ -1541,7 +1553,7 @@ export async function analyzeAndImprovePrompt(
     (l: any) => `═══ LOCATION: ${l.name} ═══\nVISUAL DNA: ${l.visualDetails}\n${l.signatureFeatures ? `LOCATION FINGERPRINT: ${l.signatureFeatures}` : ""}`
   ).join("\n\n") || "";
 
-  const stream = anthropic.messages.stream({
+  const stream = getAnthropicClient(userApiKey).messages.stream({
     model: "claude-opus-4-6",
     max_tokens: 128000,
     messages: [
@@ -1623,6 +1635,7 @@ export async function applyFeedbackToPrompt(
   userFeedback: string,
   isCharacterPortrait: boolean,
   sceneContext?: { sceneDescription?: string; mood?: string; shotLabel?: string; storyBible?: any },
+  userApiKey?: string,
 ): Promise<string> {
   let contextBlock = "";
   if (sceneContext) {
@@ -1658,7 +1671,7 @@ export async function applyFeedbackToPrompt(
     }
   }
 
-  const stream = anthropic.messages.stream({
+  const stream = getAnthropicClient(userApiKey).messages.stream({
     model: "claude-opus-4-6",
     max_tokens: 8192,
     messages: [
@@ -1722,6 +1735,7 @@ export async function generateSmartMotionPrompt(
   videoDuration: number,
   storyBible: StoryBible | null,
   videoModelId?: string | null,
+  userApiKey?: string,
 ): Promise<string> {
   const analysis = storyBible?.analysis;
 
@@ -1760,7 +1774,7 @@ export async function generateSmartMotionPrompt(
 
   const sceneContext = sceneDescription ? `\nSCENE CONTEXT: ${sceneDescription.substring(0, 300)}` : "";
 
-  const stream = anthropic.messages.stream({
+  const stream = getAnthropicClient(userApiKey).messages.stream({
     model: "claude-sonnet-4-20250514",
     max_tokens: 300,
     messages: [
@@ -1841,6 +1855,7 @@ export async function generateMotionPromptWithFeedback(
   videoDuration: number,
   storyBible: StoryBible | null,
   videoModelId?: string | null,
+  userApiKey?: string,
 ): Promise<string> {
   const analysis = storyBible?.analysis;
 
@@ -1860,7 +1875,7 @@ export async function generateMotionPromptWithFeedback(
     case "ltx23": modelName = "LTX 2.3 (8s, 1080p)"; break;
   }
 
-  const stream = anthropic.messages.stream({
+  const stream = getAnthropicClient(userApiKey).messages.stream({
     model: "claude-sonnet-4-20250514",
     max_tokens: 300,
     messages: [

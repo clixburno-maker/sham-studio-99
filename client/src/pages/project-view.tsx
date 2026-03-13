@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { getApiHeaders } from "@/lib/api-keys";
 import {
   ArrowLeft, Sparkles, Play, Pause, Plane, MapPin, User, Eye,
   Camera, Clock, Palette, Image, Loader2, RefreshCw, Download,
@@ -211,7 +212,7 @@ export default function ProjectView() {
     if (!isAnalyzing || !id) return;
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/projects/${id}/analyze-progress`);
+        const res = await fetch(`/api/projects/${id}/analyze-progress`, { headers: getApiHeaders() });
         const data = await res.json();
         if (data) {
           setAnalysisProgress(data);
@@ -258,7 +259,7 @@ export default function ProjectView() {
     if (!isGenerating || !id) return;
     const fetchProgress = async () => {
       try {
-        const res = await fetch(`/api/projects/${id}/generation-progress`);
+        const res = await fetch(`/api/projects/${id}/generation-progress`, { headers: getApiHeaders() });
         const data: GenerationProgress | null = await res.json();
         if (data) {
           setGenProgress(data);
@@ -611,7 +612,7 @@ export default function ProjectView() {
     try {
       const res = await fetch(`/api/projects/${id}/export`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getApiHeaders() },
         body: JSON.stringify({
           includeImages: true,
           includeClips: false,
@@ -1691,7 +1692,7 @@ function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: S
 
   const fetchCharRefs = useCallback(async () => {
     try {
-      const res = await fetch(`/api/projects/${projectId}/character-references`);
+      const res = await fetch(`/api/projects/${projectId}/character-references`, { headers: getApiHeaders() });
       if (res.ok) {
         const data = await res.json();
         setCharRefs(data);
@@ -1710,7 +1711,7 @@ function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: S
     if (hasGenerating && !pollIntervalRef.current) {
       pollIntervalRef.current = setInterval(async () => {
         try {
-          const res = await fetch(`/api/projects/${projectId}/character-references/poll`, { method: "POST" });
+          const res = await fetch(`/api/projects/${projectId}/character-references/poll`, { method: "POST", headers: getApiHeaders() });
           if (res.ok) {
             const data = await res.json();
             setCharRefs(data);
@@ -1738,7 +1739,7 @@ function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: S
     try {
       const res = await fetch(`/api/projects/${projectId}/generate-character-references`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getApiHeaders() },
         body: JSON.stringify({ imageModel: selectedImageModel }),
       });
       if (res.ok) {
@@ -1763,7 +1764,7 @@ function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: S
     try {
       const res = await fetch(`/api/projects/${projectId}/character-references/${refId}/regenerate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getApiHeaders() },
         body: JSON.stringify({ feedback: feedback || undefined, imageModel: selectedImageModel }),
       });
       if (res.ok) {
@@ -3039,7 +3040,7 @@ function ClipsView({
     if (!clipsInfo) {
       setDownloadState("estimating");
       try {
-        const res = await fetch(`/api/projects/${projectId}/clips-info`);
+        const res = await fetch(`/api/projects/${projectId}/clips-info`, { headers: getApiHeaders() });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
         setClipsInfo(data);
