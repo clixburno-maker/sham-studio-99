@@ -1740,90 +1740,121 @@ export async function generateSmartMotionPrompt(
   const analysis = storyBible?.analysis;
 
   const aircraftList = analysis?.jets?.map((j: any) => `${j.name} (${j.type})`).join(", ") || "";
-  const aircraftContext = aircraftList ? `\nAIRCRAFT IN STORY: ${aircraftList}. These aircraft must maintain their EXACT design — same wing geometry, engine count, tail shape, markings — throughout the video clip. The model will try to morph or redesign aircraft; your prompt must prevent this.` : "";
+  const characterList = analysis?.characters?.map((c: any) => `${c.name} (${c.role || "character"})`).join(", ") || "";
 
-  const imageContext = imagePrompt.substring(0, 1000);
+  let storyContext = "";
+  if (aircraftList) storyContext += `\nKEY AIRCRAFT: ${aircraftList}`;
+  if (characterList) storyContext += `\nKEY CHARACTERS: ${characterList}`;
 
   let modelGuidance = "";
+  let modelMotionBudget = "moderate";
   switch (videoModelId) {
     case "grok":
-      modelGuidance = "\nVIDEO MODEL: Grok Imagine Video (6s, 720p). This model handles subtle motion well but struggles with complex perspective changes. Keep motion minimal — favor slow push-ins and gentle atmospheric effects. Avoid any banking, rolling, or rotation.";
+      modelGuidance = "Grok Imagine Video (6s, 720p). Handles subtle-to-moderate motion. Good with atmospheric effects and gentle camera moves. Can handle moderate subject motion for organic subjects (people, nature) but keep mechanical subjects (aircraft, vehicles) more controlled.";
+      modelMotionBudget = "moderate";
       break;
     case "seedance":
-      modelGuidance = "\nVIDEO MODEL: Seedance 1.5 Pro (8s, 720p). ByteDance model with decent camera control. You can use slightly more confident camera moves (steady tracking shots, smooth crane), but still avoid subject rotation or perspective shifts.";
+      modelGuidance = "Seedance 1.5 Pro (8s, 720p). ByteDance model with good camera control. Supports confident camera moves — steady tracking, smooth crane, dolly shots. Can handle moderate subject motion.";
+      modelMotionBudget = "moderate-high";
       break;
     case "hailuo":
-      modelGuidance = "\nVIDEO MODEL: Hailuo 2.3 (6s, 768p). MiniMax model good at expressions and organic motion. Best for character scenes — subtle facial micro-expressions and natural body sway work well. Keep mechanical subjects (aircraft, vehicles) extremely static.";
+      modelGuidance = "Hailuo 2.3 (6s, 768p). MiniMax model excellent at expressions, organic motion, and character scenes. Facial micro-expressions, natural gestures, and body language work great. Keep mechanical subjects more controlled.";
+      modelMotionBudget = "moderate";
       break;
     case "veo31":
-      modelGuidance = "\nVIDEO MODEL: Veo 3.1 (8s, 1080p). Google model with good cinematic quality. Handles smooth camera dollies and gentle atmospheric effects well. Can tolerate slightly more environmental motion (water, clouds) but still keep subjects locked in place.";
+      modelGuidance = "Veo 3.1 (8s, 1080p). Google model with high cinematic quality. Handles smooth dollies, environmental motion (water, clouds, particles) very well. Good at physics-based motion.";
+      modelMotionBudget = "moderate-high";
       break;
     case "kling":
-      modelGuidance = "\nVIDEO MODEL: Kling 3.0 (15s, 1080p). Premium model with best motion continuity over longer duration. Since it generates 15 seconds, keep motion EXTREMELY slow and gradual — what would be a 5-second push-in should be stretched to 15 seconds. Avoid any abrupt motion.";
+      modelGuidance = "Kling 3.0 (15s, 1080p). Premium long-duration model. Since it generates 15 seconds, stretch all motion slowly and gradually across the full duration. What would be a 5-second move should unfold over 15 seconds.";
+      modelMotionBudget = "slow-extended";
       break;
     case "sora2pro":
-      modelGuidance = "\nVIDEO MODEL: Sora 2 Pro (15s, 1080p). OpenAI model with physics-aware motion. Best at realistic environmental physics (water, smoke, fabric). Over 15 seconds, describe a single very slow continuous camera move. Subject identity preservation is still critical.";
+      modelGuidance = "Sora 2 Pro (15s, 1080p). OpenAI model with physics-accurate motion. Excellent at realistic environmental physics (water, smoke, fabric, particles). Over 15 seconds, describe a continuous evolving motion that unfolds naturally.";
+      modelMotionBudget = "slow-extended";
       break;
     case "ltx23":
-      modelGuidance = "\nVIDEO MODEL: LTX 2.3 (8s, 1080p). Lightricks model that's fast but can drift on subject details over time. Front-load subject identity description at the start of your prompt. Keep camera and subject motion very conservative.";
+      modelGuidance = "LTX 2.3 (8s, 1080p). Lightricks model — fast but can drift on details over time. Front-load subject description. Keep camera and subject motion more conservative.";
+      modelMotionBudget = "conservative";
       break;
     default:
-      modelGuidance = "\nVIDEO MODEL: Unknown — use the most conservative motion guidance. Minimal camera movement, no subject transformation.";
+      modelGuidance = "Unknown model — use conservative motion guidance.";
+      modelMotionBudget = "conservative";
       break;
   }
 
-  const sceneContext = sceneDescription ? `\nSCENE CONTEXT: ${sceneDescription.substring(0, 300)}` : "";
+  const sceneContext = sceneDescription ? `\nSCENE CONTEXT: ${sceneDescription}` : "";
 
   const stream = getAnthropicClient(userApiKey).messages.stream({
     model: "claude-sonnet-4-20250514",
-    max_tokens: 300,
+    max_tokens: 500,
     messages: [
       {
         role: "user",
-        content: `You are an expert at writing motion prompts for IMAGE-TO-VIDEO AI models. These models take a SINGLE STILL IMAGE and animate it into a ${videoDuration}-second video clip. You must understand their limitations deeply.
+        content: `You are an expert cinematic motion director who writes motion prompts for IMAGE-TO-VIDEO AI models. Your job is to READ the image prompt deeply, UNDERSTAND what story moment it captures, and craft a UNIQUE motion prompt that brings that specific image to life cinematically.
 
-HOW IMAGE-TO-VIDEO AI WORKS:
-- The model receives ONE frozen frame (the source image) and generates video frames from it
-- It does NOT understand 3D geometry — it approximates motion by warping/morphing pixels
-- Large movements cause the model to "redraw" subjects, which changes their design (this is the #1 problem)
-- The less the subject needs to change, the more consistent the output looks
-- Slow, gentle, continuous motion produces dramatically better results than fast or complex motion
+STEP 1 — ANALYZE THE IMAGE (do this mentally, don't output it):
+Read the full image prompt below and identify:
+- What is the PRIMARY SUBJECT? (person, aircraft, landscape, battle scene, etc.)
+- What EMOTION/MOOD does the image convey? (tension, serenity, chaos, triumph, loss, determination)
+- What is the COMPOSITION? (close-up, wide shot, aerial, ground-level, over-shoulder)
+- What ELEMENTS are present? (fire, water, smoke, clouds, dust, rain, people, vehicles, structures)
+- What MOMENT in the story is this? (calm before storm, climax of battle, quiet aftermath, hero's introduction)
 
-THE STILL IMAGE SHOWS:
-${imageContext}
-${aircraftContext}${modelGuidance}${sceneContext}
+THE IMAGE PROMPT:
+${imagePrompt}
+${storyContext}
 
+VIDEO MODEL: ${modelGuidance}
+MOTION BUDGET: ${modelMotionBudget}
+${sceneContext}
 SCENE MOOD: ${mood || "cinematic"}
-SHOT: ${shotLabel}
+SHOT TYPE: ${shotLabel}
 DURATION: ${videoDuration} seconds
-${rawMotionPrompt ? `DIRECTOR'S MOTION NOTE: ${rawMotionPrompt}` : ""}
+${rawMotionPrompt ? `DIRECTOR'S NOTE: ${rawMotionPrompt}` : ""}
 
-YOUR TASK: Write a motion prompt that will produce a cinematic, visually consistent ${videoDuration}-second clip.
+STEP 2 — CRAFT MOTION THAT SERVES THE STORY:
+Based on your analysis, write a motion prompt that makes this specific image feel ALIVE and CINEMATIC. Match the motion intensity to the story moment:
 
-STRUCTURE YOUR PROMPT IN THIS ORDER:
-1. SUBJECT IDENTITY LOCK (required): Start by describing what the main subject IS and that it must stay unchanged. Example: "A P-51 Mustang fighter with checkered nose art maintains steady level flight" — this tells the model WHAT to preserve.
-2. CAMERA MOTION (pick ONE, keep it slow): slow dolly in, gentle tracking shot, subtle crane up, steady push-in, slow pull-back, static with minimal drift. NEVER use fast pans, whip pans, or rapid zooms — these cause severe morphing.
-3. SUBJECT MOTION (minimal and natural): Describe ONLY motion that continues what's already happening in the still frame. If a plane is flying level, it stays flying level with subtle wing micro-adjustments. If a person is standing, they breathe and shift weight. NEVER introduce new events (no crashes, no takeoffs, no landings, no explosions starting, no objects appearing).
-4. ENVIRONMENTAL MOTION (ONE detail): clouds drifting, water rippling, exhaust shimmer, smoke wisping, dust particles, heat haze, light rays shifting. Pick the most cinematic one.
+MOOD → MOTION MAPPING:
+- Tense/suspenseful → Slow creeping dolly, barely perceptible zoom, heavy atmosphere
+- Epic/triumphant → Confident tracking shot, rising crane, billowing elements
+- Quiet/reflective → Nearly static with breathing environmental motion, gentle light shifts
+- Chaotic/intense → Handheld drift feel, active environmental elements (smoke, debris, sparks)
+- Dramatic/emotional → Slow push-in toward emotional focal point, subtle depth-of-field shift
+- Mysterious/ominous → Slow lateral drift, fog/mist movement, shifting shadows
 
-CRITICAL ANTI-MORPHING RULES:
-- AIRCRAFT: Say "maintains steady flight path" NOT "banks left" or "rolls" — banking requires the model to redraw the entire aircraft from a new angle, which changes its design
-- VEHICLES: Say "holds course" NOT "turns" — turning changes the perspective and forces a redraw
-- PEOPLE: Say "subtle breathing, slight eye movement" NOT "turns head" or "walks" — large body movements cause face/body morphing
-- EXPLOSIONS/FIRE: Say "flames continue flickering and billowing" NOT "explosion expands" — expansion requires generating new imagery
-- WATER: Say "gentle wave motion continues" NOT "waves crash" — crashing requires dramatic new geometry
-- GENERAL: If something is static in the image, keep it static. Only animate things that would naturally have continuous subtle motion.
+CAMERA VOCABULARY (choose what fits THIS image):
+- Slow dolly in/out, tracking shot (lateral), crane up/down, push-in, pull-back
+- Static with subtle drift, orbiting micro-movement, rack focus feel
+- For ${modelMotionBudget === "slow-extended" ? "15-second duration: stretch the camera move across the full duration, ultra-gradual" : modelMotionBudget === "conservative" ? "this model: favor static or very gentle push-in" : "this model: use confident but smooth camera motion"}
 
-FORBIDDEN (these ALWAYS produce bad results):
-- Story progression (torpedo hitting, plane crashing, person reacting to something new)
-- Perspective changes (subject turning, rotating, banking sharply)
-- New objects entering frame
-- Dramatic speed changes
-- Text, speech, narration, dialogue, sound effects
-- Complex multi-step actions
-- Rapid camera movement
+SUBJECT MOTION GUIDELINES:
+- People/characters: Natural human motion — breathing, weight shifts, hair movement, fabric flutter, eye micro-movements, hand gestures if contextually appropriate
+- Aircraft in flight: Maintain flight path with subtle wing micro-adjustments, engine exhaust shimmer, vapor trails
+- Ships/vessels: Hold course with gentle hull pitch on waves, wake ripple
+- Vehicles: Maintain heading with suspension micro-movements, wheel rotation continuity
+- Landscapes/structures: Static subjects stay static — motion comes from environment around them
+- Fire/explosions: Continue existing fire dynamics — flickering, billowing, embers rising
+- Water: Existing wave patterns continue naturally, reflections shift with light
 
-FORMAT: Write 2-3 sentences, 30-50 words total. No quotes, no labels, no explanation. Just the motion prompt text.`,
+ENVIRONMENT — bring the world alive:
+Don't pick just ONE environmental detail — describe ALL the natural environmental motion that would exist in this specific scene. A battlefield has smoke AND dust AND distant fire. An ocean scene has waves AND spray AND shifting clouds. A forest has rustling leaves AND dappled light AND ambient particles.
+
+IDENTITY PROTECTION:
+- Name the primary subject specifically at the start of your prompt (e.g., "A P-51 Mustang with invasion stripes" not just "the aircraft")
+- Avoid any motion that would require the AI to show a NEW ANGLE of the subject it hasn't seen
+- No banking, sharp turns, rotation revealing unseen sides, or drastic perspective shifts
+- Continuing existing motion direction is fine — changing direction is risky
+
+FORBIDDEN:
+- New story events not present in the image (no new explosions, crashes, arrivals)
+- Subject rotation or perspective reversal
+- New objects appearing in frame
+- Text, dialogue, narration, sound descriptions
+- Rapid or jerky camera movement
+
+FORMAT: Write 3-5 sentences, 50-100 words. No quotes, no labels, no section headers, no explanation. Just the motion prompt text, written as a fluid cinematic direction.`,
       },
     ],
   });
@@ -1860,9 +1891,11 @@ export async function generateMotionPromptWithFeedback(
   const analysis = storyBible?.analysis;
 
   const aircraftList = analysis?.jets?.map((j: any) => `${j.name} (${j.type})`).join(", ") || "";
-  const aircraftContext = aircraftList ? `\nAIRCRAFT IN STORY: ${aircraftList}. These must maintain EXACT design throughout.` : "";
+  const characterList = analysis?.characters?.map((c: any) => `${c.name} (${c.role || "character"})`).join(", ") || "";
 
-  const imageContext = imagePrompt.substring(0, 800);
+  let storyContext = "";
+  if (aircraftList) storyContext += `\nKEY AIRCRAFT: ${aircraftList}`;
+  if (characterList) storyContext += `\nKEY CHARACTERS: ${characterList}`;
 
   let modelName = "image-to-video AI";
   switch (videoModelId) {
@@ -1875,39 +1908,75 @@ export async function generateMotionPromptWithFeedback(
     case "ltx23": modelName = "LTX 2.3 (8s, 1080p)"; break;
   }
 
+  const feedbackLower = feedback.toLowerCase();
+  let feedbackStrategy = "";
+  if (feedbackLower.includes("morph") || feedbackLower.includes("changing design") || feedbackLower.includes("distort") || feedbackLower.includes("deform")) {
+    feedbackStrategy = "\nFEEDBACK STRATEGY: The user reported morphing/distortion. Make this version MORE conservative — reduce subject motion, use a simpler camera move, and emphasize subject identity preservation. Keep environmental motion but lock the main subject.";
+  } else if (feedbackLower.includes("static") || feedbackLower.includes("boring") || feedbackLower.includes("no motion") || feedbackLower.includes("too slow") || feedbackLower.includes("lifeless")) {
+    feedbackStrategy = "\nFEEDBACK STRATEGY: The user wants MORE motion/life. Add richer environmental motion, more confident camera movement, and natural subject motion (breathing, gestures, fabric movement). Make the scene feel alive and cinematic.";
+  } else if (feedbackLower.includes("camera") || feedbackLower.includes("zoom") || feedbackLower.includes("pan")) {
+    feedbackStrategy = "\nFEEDBACK STRATEGY: The user wants different camera work. Try a completely different camera approach — if the previous used push-in, try tracking or crane. Match the camera style to the emotional content of the scene.";
+  }
+
   const stream = getAnthropicClient(userApiKey).messages.stream({
     model: "claude-sonnet-4-20250514",
-    max_tokens: 300,
+    max_tokens: 500,
     messages: [
       {
         role: "user",
-        content: `You write motion prompts for ${modelName} image-to-video generation. A previous motion prompt produced unsatisfactory results and the user has provided feedback on what went wrong.
+        content: `You are an expert cinematic motion director. A previous motion prompt produced unsatisfactory results. You need to deeply understand the image, understand what went wrong, and write a completely NEW motion prompt.
 
-THE STILL IMAGE SHOWS:
-${imageContext}
-${aircraftContext}
+STEP 1 — UNDERSTAND THE IMAGE (do this mentally):
+Read the full image prompt and understand what subjects, mood, composition, and story moment it captures.
 
-SCENE: ${sceneDescription.substring(0, 300)}
+THE IMAGE PROMPT:
+${imagePrompt}
+${storyContext}
+
+VIDEO MODEL: ${modelName}
+SCENE: ${sceneDescription}
 MOOD: ${mood || "cinematic"}
 SHOT: ${shotLabel}
 DURATION: ${videoDuration} seconds
 
-PREVIOUS MOTION PROMPT THAT PRODUCED BAD RESULTS:
+PREVIOUS MOTION PROMPT (produced bad results):
 "${previousMotionPrompt}"
 
-USER FEEDBACK ON WHAT WENT WRONG:
+USER FEEDBACK:
 "${feedback}"
+${feedbackStrategy}
 
-Write a NEW motion prompt that addresses the user's feedback while following these rules:
-1. START with a subject identity lock — describe what the main subject IS so the model preserves it
-2. Use ONE slow camera move (slow dolly, gentle push-in, subtle tracking, or static)
-3. Keep subject motion minimal — only continue what's already visible, never introduce new events
-4. Add ONE atmospheric detail (clouds, water, heat shimmer, smoke)
-5. ANTI-MORPHING: Never describe perspective changes, banking, rotating, or anything that forces the model to redraw subjects
-6. If the feedback mentions "morphing" or "changing design" — make the prompt even MORE conservative with less motion
-7. If the feedback mentions "too static" — add slightly more environmental motion while keeping subjects locked
+STEP 2 — WRITE A NEW MOTION PROMPT:
+Address the user's specific feedback while crafting motion that serves THIS specific image's story moment.
 
-FORMAT: 2-3 sentences, 30-50 words total. No quotes, no labels, no explanation. Just the motion prompt.`,
+Match motion intensity to mood:
+- Tense/suspenseful → Slow creeping motion, heavy atmosphere
+- Epic/triumphant → Confident camera, billowing environmental elements
+- Quiet/reflective → Nearly static, breathing environmental motion
+- Chaotic/intense → Active environmental elements, handheld drift feel
+- Dramatic/emotional → Slow push-in toward emotional focal point
+
+SUBJECT MOTION — natural and contextual:
+- People: breathing, weight shifts, hair movement, fabric flutter, eye movements, natural gestures
+- Aircraft: maintain flight path, subtle wing adjustments, exhaust shimmer
+- Ships: hold course, gentle hull pitch, wake ripple
+- Landscapes: environmental motion around static structures
+
+ENVIRONMENT — bring the full world alive:
+Describe ALL natural environmental motion for this scene — not just one element.
+
+IDENTITY PROTECTION:
+- Name the primary subject specifically at the start
+- No rotation revealing unseen angles, no perspective reversal
+- Continuing existing motion is fine, changing direction is risky
+
+FORBIDDEN:
+- New story events not in the image
+- Subject rotation or perspective reversal
+- New objects appearing
+- Text, dialogue, narration, sound descriptions
+
+FORMAT: 3-5 sentences, 50-100 words. No quotes, no labels, no headers. Just fluid cinematic motion direction.`,
       },
     ],
   });

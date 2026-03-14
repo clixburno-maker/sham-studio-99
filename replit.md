@@ -92,10 +92,11 @@ Once a project exists, the system analyzes the script using Claude Opus 4.6, bui
 5. **Character Reference Portraits**: Multi-angle reference portrait images (front, 3/4, profile) for visual consistency
 6. **Total Visual Consistency with Identity Anchoring**: ALL element descriptions copied word-for-word into every prompt
 7. **Prompt Quality**: No word limit, 800-2,000+ words per prompt
-8. **AI-Powered Motion Prompts**: Three-layer motion prompt system designed for image-to-video AI limitations:
+8. **AI-Powered Motion Prompts**: Three-layer motion prompt system with deep image understanding and story-driven motion:
    - Layer 1: Analysis-time motion prompts with anti-morphing rules and subject identity preservation
-   - Layer 2: `generateSmartMotionPrompt()` — Claude-powered refinement at video generation time with subject identity locking, anti-morphing constraints, and model-aware motion guidance
-   - Layer 3: `buildVideoPrompt()` — fallback with automatic subject-type detection (aircraft/vehicle/vessel) and consistency anchoring
+   - Layer 2: `generateSmartMotionPrompt()` — Claude-powered cinematic motion director that deeply analyzes each image prompt (subjects, mood, composition, story moment), maps mood to motion intensity (tense→creeping, epic→confident, quiet→subtle, chaotic→active), uses full camera vocabulary (dolly/tracking/crane/static/drift), generates rich environmental motion (multiple elements per scene), and produces unique 50-100 word prompts per image. Model-aware with motion budgets (conservative/moderate/moderate-high/slow-extended). Relaxed anti-morphing for more cinematic results while still protecting subject identity.
+   - Layer 2b: `generateMotionPromptWithFeedback()` — intelligent feedback analysis that detects feedback type (morphing→conservative, static→more life, camera→different approach) and applies targeted strategy
+   - Layer 3: `buildVideoPrompt()` — smart fallback with image-aware camera selection (wide→lateral drift, close-up→push-in, battle→handheld drift, sunset→crane), environment-specific motion (ocean/sky/fire/rain/snow/jungle/desert/night), and expanded subject detection (aircraft/vessel/vehicle/portrait)
 
 ## Scene Data
 - `scene.promptBase` - JSON string array of 2-10 image prompts (variable per scene)

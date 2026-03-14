@@ -38,24 +38,59 @@ function stripDialogue(text: string): string {
 function buildVideoPrompt(motionPrompt: string | null | undefined, imagePrompt: string): string {
   if (motionPrompt) {
     const cleaned = stripDialogue(motionPrompt);
-    return `${cleaned} Maintain exact subject appearance and design throughout. Gentle continuous motion only, no morphing or transformation.`;
+    return `${cleaned} Maintain exact subject appearance and design throughout. Smooth continuous motion, no morphing or transformation.`;
   }
-  const subjectHint = extractSubjectHint(imagePrompt);
-  return `${subjectHint}Slow cinematic push-in with steady framing. Subtle natural motion — gentle atmospheric movement, soft light shifts. Maintain exact subject design and proportions throughout, no morphing or shape changes.`;
+  const { subjectLock, cameraMove, envMotion } = analyzeImageForFallback(imagePrompt);
+  return `${subjectLock}${cameraMove} ${envMotion} Maintain exact subject design and proportions throughout.`;
 }
 
-function extractSubjectHint(imagePrompt: string): string {
+function analyzeImageForFallback(imagePrompt: string): { subjectLock: string; cameraMove: string; envMotion: string } {
   const lower = imagePrompt.toLowerCase();
+
+  let subjectLock = "";
   if (lower.includes("aircraft") || lower.includes("fighter") || lower.includes("bomber") || lower.includes("plane") || lower.includes("jet") || lower.includes("mustang") || lower.includes("spitfire") || lower.includes("messerschmitt") || lower.includes("p-51") || lower.includes("p-47") || lower.includes("f4u") || lower.includes("b-17") || lower.includes("b-29") || lower.includes("zero") || lower.includes("corsair")) {
-    return "Aircraft maintains exact design, wing shape, and markings throughout. ";
+    subjectLock = "Aircraft maintains exact design, wing shape, and markings. ";
+  } else if (lower.includes("ship") || lower.includes("carrier") || lower.includes("destroyer") || lower.includes("battleship") || lower.includes("submarine") || lower.includes("vessel") || lower.includes("cruiser")) {
+    subjectLock = "Vessel maintains exact hull shape and superstructure. ";
+  } else if (lower.includes("tank") || lower.includes("vehicle") || lower.includes("truck") || lower.includes("jeep") || lower.includes("halftrack")) {
+    subjectLock = "Vehicle maintains exact design and proportions. ";
+  } else if (lower.includes("portrait") || lower.includes("face") || lower.includes("close-up") || lower.includes("closeup") || lower.includes("pilot") || lower.includes("soldier") || lower.includes("officer")) {
+    subjectLock = "Subject maintains exact facial features and expression. ";
   }
-  if (lower.includes("ship") || lower.includes("carrier") || lower.includes("destroyer") || lower.includes("battleship") || lower.includes("submarine") || lower.includes("vessel") || lower.includes("cruiser")) {
-    return "Vessel maintains exact hull shape and superstructure throughout. ";
+
+  let cameraMove = "Slow cinematic push-in with steady framing.";
+  if (lower.includes("wide shot") || lower.includes("establishing") || lower.includes("panoram") || lower.includes("landscape") || lower.includes("aerial view")) {
+    cameraMove = "Slow sweeping lateral drift across the vista.";
+  } else if (lower.includes("close-up") || lower.includes("closeup") || lower.includes("detail") || lower.includes("macro") || lower.includes("portrait")) {
+    cameraMove = "Extremely slow push-in with shallow depth-of-field drift.";
+  } else if (lower.includes("battle") || lower.includes("combat") || lower.includes("explosion") || lower.includes("chaos") || lower.includes("attack")) {
+    cameraMove = "Subtle handheld drift with slight instability conveying intensity.";
+  } else if (lower.includes("silhouette") || lower.includes("sunset") || lower.includes("dawn") || lower.includes("dusk") || lower.includes("sunrise")) {
+    cameraMove = "Nearly static with subtle upward crane revealing light.";
+  } else if (lower.includes("underwater") || lower.includes("beneath the surface") || lower.includes("submerged")) {
+    cameraMove = "Gentle floating drift with organic underwater sway.";
   }
-  if (lower.includes("tank") || lower.includes("vehicle") || lower.includes("truck") || lower.includes("jeep") || lower.includes("halftrack")) {
-    return "Vehicle maintains exact design and proportions throughout. ";
+
+  let envMotion = "Subtle atmospheric movement, soft light shifts.";
+  if (lower.includes("ocean") || lower.includes("sea") || lower.includes("water") || lower.includes("wave") || lower.includes("naval")) {
+    envMotion = "Ocean swells rise and fall, spray mists catch the light, reflections shimmer across the water surface.";
+  } else if (lower.includes("cloud") || lower.includes("sky") || lower.includes("altitude") || lower.includes("flying")) {
+    envMotion = "Clouds drift past slowly, exhaust shimmer trails behind, light rays shift through the atmosphere.";
+  } else if (lower.includes("fire") || lower.includes("flame") || lower.includes("burn") || lower.includes("explosion") || lower.includes("smoke")) {
+    envMotion = "Flames flicker and billow, smoke curls upward, embers and sparks drift through the air.";
+  } else if (lower.includes("rain") || lower.includes("storm") || lower.includes("lightning")) {
+    envMotion = "Rain streaks past, puddles ripple, distant lightning flickers through dark clouds.";
+  } else if (lower.includes("snow") || lower.includes("winter") || lower.includes("blizzard") || lower.includes("frost")) {
+    envMotion = "Snowflakes drift down gently, frost glistens, cold breath mists in the air.";
+  } else if (lower.includes("jungle") || lower.includes("forest") || lower.includes("tree") || lower.includes("vegetation")) {
+    envMotion = "Leaves rustle gently, dappled light shifts through the canopy, insects and particles float.";
+  } else if (lower.includes("desert") || lower.includes("sand") || lower.includes("dust") || lower.includes("arid")) {
+    envMotion = "Heat haze shimmers above the ground, fine dust particles drift, sand grains shift in the wind.";
+  } else if (lower.includes("night") || lower.includes("darkness") || lower.includes("moonlight")) {
+    envMotion = "Shadows shift subtly, ambient light breathes, distant points of light flicker.";
   }
-  return "";
+
+  return { subjectLock, cameraMove, envMotion };
 }
 
 export async function registerRoutes(
