@@ -1787,7 +1787,7 @@ export async function generateSmartMotionPrompt(
 
   const stream = getAnthropicClient(userApiKey).messages.stream({
     model: "claude-sonnet-4-20250514",
-    max_tokens: 500,
+    max_tokens: 1500,
     messages: [
       {
         role: "user",
@@ -1814,7 +1814,7 @@ DURATION: ${videoDuration} seconds
 ${rawMotionPrompt ? `DIRECTOR'S NOTE: ${rawMotionPrompt}` : ""}
 
 STEP 2 — CRAFT MOTION THAT SERVES THE STORY:
-Based on your analysis, write a motion prompt that makes this specific image feel ALIVE and CINEMATIC. Match the motion intensity to the story moment:
+Based on your analysis, write a motion prompt that makes this specific image feel ALIVE and CINEMATIC. Match the motion intensity to the story moment. There is NO word limit — write as much rich, detailed cinematic direction as this image deserves, up to 700 words maximum. More complex scenes with many elements deserve longer, more detailed motion prompts. Simple scenes can be shorter. Let the content dictate the length.
 
 MOOD → MOTION MAPPING:
 - Tense/suspenseful → Slow creeping dolly, barely perceptible zoom, heavy atmosphere
@@ -1839,7 +1839,7 @@ SUBJECT MOTION GUIDELINES:
 - Water: Existing wave patterns continue naturally, reflections shift with light
 
 ENVIRONMENT — bring the world alive:
-Don't pick just ONE environmental detail — describe ALL the natural environmental motion that would exist in this specific scene. A battlefield has smoke AND dust AND distant fire. An ocean scene has waves AND spray AND shifting clouds. A forest has rustling leaves AND dappled light AND ambient particles.
+Don't pick just ONE environmental detail — describe ALL the natural environmental motion that would exist in this specific scene. A battlefield has smoke AND dust AND distant fire. An ocean scene has waves AND spray AND shifting clouds. A forest has rustling leaves AND dappled light AND ambient particles. Describe the atmosphere, the particles in the air, the quality of light shifting, reflections, shadows — everything that would move naturally in this specific scene.
 
 IDENTITY PROTECTION:
 - Name the primary subject specifically at the start of your prompt (e.g., "A P-51 Mustang with invasion stripes" not just "the aircraft")
@@ -1854,7 +1854,7 @@ FORBIDDEN:
 - Text, dialogue, narration, sound descriptions
 - Rapid or jerky camera movement
 
-FORMAT: Write 3-5 sentences, 50-100 words. No quotes, no labels, no section headers, no explanation. Just the motion prompt text, written as a fluid cinematic direction.`,
+FORMAT: Write as many sentences as needed — no minimum, no maximum word count, up to 700 words. No quotes, no labels, no section headers, no explanation. Just the motion prompt text, written as fluid cinematic direction. Let the complexity of the image dictate how much detail you provide.`,
       },
     ],
   });
@@ -1920,7 +1920,7 @@ export async function generateMotionPromptWithFeedback(
 
   const stream = getAnthropicClient(userApiKey).messages.stream({
     model: "claude-sonnet-4-20250514",
-    max_tokens: 500,
+    max_tokens: 1500,
     messages: [
       {
         role: "user",
@@ -1947,7 +1947,7 @@ USER FEEDBACK:
 ${feedbackStrategy}
 
 STEP 2 — WRITE A NEW MOTION PROMPT:
-Address the user's specific feedback while crafting motion that serves THIS specific image's story moment.
+Address the user's specific feedback while crafting motion that serves THIS specific image's story moment. There is NO word limit — write as much rich, detailed cinematic direction as this image deserves, up to 700 words maximum. More complex scenes deserve longer prompts. Let the content dictate the length.
 
 Match motion intensity to mood:
 - Tense/suspenseful → Slow creeping motion, heavy atmosphere
@@ -1963,7 +1963,7 @@ SUBJECT MOTION — natural and contextual:
 - Landscapes: environmental motion around static structures
 
 ENVIRONMENT — bring the full world alive:
-Describe ALL natural environmental motion for this scene — not just one element.
+Describe ALL natural environmental motion for this scene — not just one element. Describe the atmosphere, particles, light quality, reflections, shadows — everything that would move naturally.
 
 IDENTITY PROTECTION:
 - Name the primary subject specifically at the start
@@ -1976,7 +1976,7 @@ FORBIDDEN:
 - New objects appearing
 - Text, dialogue, narration, sound descriptions
 
-FORMAT: 3-5 sentences, 50-100 words. No quotes, no labels, no headers. Just fluid cinematic motion direction.`,
+FORMAT: Write as many sentences as needed — no minimum, no maximum word count, up to 700 words. No quotes, no labels, no headers. Just fluid cinematic motion direction. Let the complexity of the image dictate how much detail you provide.`,
       },
     ],
   });
