@@ -426,7 +426,7 @@ function repairPromptArrayJson(text: string): any | null {
   }
 }
 
-function validateAndFillSentenceCoverage(
+export function validateAndFillSentenceCoverage(
   visualScenes: VisualScene[],
   sentences: string[],
   analysis: any
@@ -496,14 +496,8 @@ function validateAndFillSentenceCoverage(
   return allScenes;
 }
 
-async function analyzeStoryBibleOnly(script: string, userApiKey?: string): Promise<StoryBible> {
-  const stream = getAnthropicClient(userApiKey).messages.stream({
-    model: "claude-opus-4-6",
-    max_tokens: 128000,
-    messages: [
-      {
-        role: "user",
-        content: `You are an elite film director, visual storytelling expert, and master of visual consistency. Read this ENTIRE script carefully and create a comprehensive Story Bible. The Story Bible is the SINGLE SOURCE OF TRUTH for how every character, aircraft, vehicle, object, and location looks across ALL generated images. Any vagueness here will destroy visual consistency.
+export function buildStoryBibleMessageContent(script: string): string {
+  return `You are an elite film director, visual storytelling expert, and master of visual consistency. Read this ENTIRE script carefully and create a comprehensive Story Bible. The Story Bible is the SINGLE SOURCE OF TRUTH for how every character, aircraft, vehicle, object, and location looks across ALL generated images. Any vagueness here will destroy visual consistency.
 
 SCRIPT:
 """
@@ -593,19 +587,19 @@ CRITICAL REQUIREMENTS:
 3. weatherProgression must describe weather changes through the ENTIRE story — this is how we maintain weather continuity across scenes.
 4. Character appearances must be so detailed that an artist could draw them from the description alone, with zero ambiguity.
 5. NEVER use vague terms like "military uniform" — specify the EXACT type, color, patches, condition.
-Output ONLY valid JSON, nothing else.`,
-      },
-    ],
-  });
+Output ONLY valid JSON, nothing else.`;
+}
 
-  const message = await stream.finalMessage();
-  if (message.stop_reason === "max_tokens") {
-    console.warn("Story Bible: Claude response truncated (max_tokens). Attempting JSON repair...");
-  }
-  const content = message.content[0];
-  if (content.type !== "text") throw new Error("Unexpected response type from Claude");
+export function buildStoryBibleParams(script: string) {
+  return {
+    model: "claude-opus-4-6" as const,
+    max_tokens: 128000,
+    messages: [{ role: "user" as const, content: buildStoryBibleMessageContent(script) }],
+  };
+}
 
-  const result = parseJsonResponse(content.text);
+export function parseStoryBibleResult(text: string): StoryBible {
+  const result = parseJsonResponse(text);
   if (!result.analysis) throw new Error("AI returned an incomplete story analysis. Please try again.");
 
   const analysis = result.analysis;
@@ -631,7 +625,21 @@ Output ONLY valid JSON, nothing else.`,
   };
 }
 
-async function analyzeVisualScenesChunk(
+async function analyzeStoryBibleOnly(script: string, userApiKey?: string): Promise<StoryBible> {
+  const params = buildStoryBibleParams(script);
+  const stream = getAnthropicClient(userApiKey).messages.stream(params);
+
+  const message = await stream.finalMessage();
+  if (message.stop_reason === "max_tokens") {
+    console.warn("Story Bible: Claude response truncated (max_tokens). Attempting JSON repair...");
+  }
+  const content = message.content[0];
+  if (content.type !== "text") throw new Error("Unexpected response type from Claude");
+
+  return parseStoryBibleResult(content.text);
+}
+
+export function buildVisualScenesChunkParams(
   script: string,
   sentences: string[],
   startIndex: number,
@@ -639,8 +647,7 @@ async function analyzeVisualScenesChunk(
   storyBible: StoryBible,
   chunkNumber: number,
   totalChunks: number,
-  userApiKey?: string,
-): Promise<VisualScene[]> {
+) {
   const chunkSentences = sentences.slice(startIndex, endIndex);
   const numberedSentences = chunkSentences.map((s, i) => `[${startIndex + i}] ${s}`).join("\n");
 
@@ -664,12 +671,12 @@ async function analyzeVisualScenesChunk(
     `${l.name}: ${l.description}. Visual Fingerprint: ${l.signatureFeatures || "See visual details"}`
   ).join("\n");
 
-  const stream = getAnthropicClient(userApiKey).messages.stream({
-    model: "claude-opus-4-6",
+  return {
+    model: "claude-opus-4-6" as const,
     max_tokens: 128000,
     messages: [
       {
-        role: "user",
+        role: "user" as const,
         content: `You are an elite film director creating visual scene breakdowns with deep narrative understanding. You already have the Story Bible. Now break this PORTION of the script into visual beats.
 
 ═══════════════════════════════════════════
@@ -764,20 +771,21 @@ NARRATIVE TECHNIQUE DETECTION — identify these in the sceneDescription and moo
 - Output ONLY valid JSON, nothing else.`,
       },
     ],
-  });
+  };
+}
 
-  const message = await stream.finalMessage();
-  const content = message.content[0];
-  if (content.type !== "text") throw new Error("Unexpected response type from Claude");
-
-  if (message.stop_reason === "max_tokens") {
-    console.warn(`Chunk ${chunkNumber}: Claude response truncated. Attempting repair...`);
-  }
-
-  const result = parseJsonResponse(content.text);
+export function parseVisualScenesChunkResult(
+  text: string,
+  sentences: string[],
+  startIndex: number,
+  endIndex: number,
+  storyBible: StoryBible,
+  chunkLabel: string,
+): VisualScene[] {
+  const result = parseJsonResponse(text);
 
   if (!result.visualScenes || !Array.isArray(result.visualScenes) || result.visualScenes.length === 0) {
-    console.warn(`Chunk ${chunkNumber}: No visual scenes returned. Creating fallback.`);
+    console.warn(`${chunkLabel}: No visual scenes returned. Creating fallback.`);
     const fallbackScenes: VisualScene[] = [];
     for (let i = startIndex; i < endIndex; i += 3) {
       const indices = [];
@@ -829,60 +837,37 @@ NARRATIVE TECHNIQUE DETECTION — identify these in the sceneDescription and moo
   }));
 }
 
-export async function analyzeFullStory(
+async function analyzeVisualScenesChunk(
   script: string,
-  onProgress?: (detail: string, current: number, total: number) => void,
-  userApiKey?: string
-): Promise<{ storyBible: StoryBible; visualScenes: VisualScene[] }> {
-  const sentences = splitIntoSentences(script);
-  const CHUNK_THRESHOLD = 150;
+  sentences: string[],
+  startIndex: number,
+  endIndex: number,
+  storyBible: StoryBible,
+  chunkNumber: number,
+  totalChunks: number,
+  userApiKey?: string,
+): Promise<VisualScene[]> {
+  const params = buildVisualScenesChunkParams(script, sentences, startIndex, endIndex, storyBible, chunkNumber, totalChunks);
+  const stream = getAnthropicClient(userApiKey).messages.stream(params);
 
-  if (sentences.length > CHUNK_THRESHOLD) {
-    console.log(`Long script detected: ${sentences.length} sentences. Using chunked analysis.`);
+  const message = await stream.finalMessage();
+  const content = message.content[0];
+  if (content.type !== "text") throw new Error("Unexpected response type from Claude");
 
-    onProgress?.("AI is reading your entire script to build a comprehensive Story Bible...", 1, 4);
-    const storyBible = await analyzeStoryBibleOnly(script, userApiKey);
-
-    const CHUNK_SIZE = 50;
-    const chunks: { start: number; end: number }[] = [];
-    for (let i = 0; i < sentences.length; i += CHUNK_SIZE) {
-      chunks.push({ start: i, end: Math.min(i + CHUNK_SIZE, sentences.length) });
-    }
-
-    let allVisualScenes: VisualScene[] = [];
-    for (let c = 0; c < chunks.length; c++) {
-      const chunk = chunks[c];
-      onProgress?.(
-        `Breaking sentences ${chunk.start + 1}-${chunk.end} into visual beats (chunk ${c + 1}/${chunks.length})...`,
-        2,
-        4
-      );
-
-      const chunkScenes = await analyzeVisualScenesChunk(
-        script,
-        sentences,
-        chunk.start,
-        chunk.end,
-        storyBible,
-        c + 1,
-        chunks.length,
-        userApiKey,
-      );
-      allVisualScenes = allVisualScenes.concat(chunkScenes);
-    }
-
-    const visualScenes = validateAndFillSentenceCoverage(allVisualScenes, sentences, storyBible.analysis);
-    return { storyBible, visualScenes };
+  if (message.stop_reason === "max_tokens") {
+    console.warn(`Chunk ${chunkNumber}: Claude response truncated. Attempting repair...`);
   }
 
-  onProgress?.("AI is reading your entire script to understand the full story...", 1, 4);
+  return parseVisualScenesChunkResult(content.text, sentences, startIndex, endIndex, storyBible, `Chunk ${chunkNumber}`);
+}
 
-  const stream = getAnthropicClient(userApiKey).messages.stream({
-    model: "claude-opus-4-6",
+export function buildFullStoryParams(script: string) {
+  return {
+    model: "claude-opus-4-6" as const,
     max_tokens: 128000,
     messages: [
       {
-        role: "user",
+        role: "user" as const,
         content: `You are an elite film director, visual storytelling expert, and master of visual consistency. Read this ENTIRE script in one pass and create TWO things:
 
 1. A COMPREHENSIVE STORY BIBLE — the single source of truth for how every character, aircraft, vehicle, object, and location looks
@@ -1008,20 +993,11 @@ CRITICAL RULES:
 - Output ONLY valid JSON, nothing else.`,
       },
     ],
-  });
+  };
+}
 
-  const message = await stream.finalMessage();
-
-  const content = message.content[0];
-  if (content.type !== "text") {
-    throw new Error("Unexpected response type from Claude");
-  }
-
-  if (message.stop_reason === "max_tokens") {
-    console.warn("Claude response was truncated due to max_tokens limit. Attempting JSON repair...");
-  }
-
-  const result = parseJsonResponse(content.text);
+export function parseFullStoryResult(text: string, sentences: string[]): { storyBible: StoryBible; visualScenes: VisualScene[] } {
+  const result = parseJsonResponse(text);
 
   if (!result.analysis) {
     throw new Error("AI returned an incomplete story analysis. Please try again.");
@@ -1103,13 +1079,77 @@ CRITICAL RULES:
         weatherConditions: "",
       });
     }
-    console.log(`Generated ${visualScenes.length} fallback scenes from ${sentences.length} sentences`);
   }
 
   return { storyBible, visualScenes };
 }
 
-export async function generateSequencePrompts(
+export async function analyzeFullStory(
+  script: string,
+  onProgress?: (detail: string, current: number, total: number) => void,
+  userApiKey?: string
+): Promise<{ storyBible: StoryBible; visualScenes: VisualScene[] }> {
+  const sentences = splitIntoSentences(script);
+  const CHUNK_THRESHOLD = 150;
+
+  if (sentences.length > CHUNK_THRESHOLD) {
+    console.log(`Long script detected: ${sentences.length} sentences. Using chunked analysis.`);
+
+    onProgress?.("AI is reading your entire script to build a comprehensive Story Bible...", 1, 4);
+    const storyBible = await analyzeStoryBibleOnly(script, userApiKey);
+
+    const CHUNK_SIZE = 50;
+    const chunks: { start: number; end: number }[] = [];
+    for (let i = 0; i < sentences.length; i += CHUNK_SIZE) {
+      chunks.push({ start: i, end: Math.min(i + CHUNK_SIZE, sentences.length) });
+    }
+
+    let allVisualScenes: VisualScene[] = [];
+    for (let c = 0; c < chunks.length; c++) {
+      const chunk = chunks[c];
+      onProgress?.(
+        `Breaking sentences ${chunk.start + 1}-${chunk.end} into visual beats (chunk ${c + 1}/${chunks.length})...`,
+        2,
+        4
+      );
+
+      const chunkScenes = await analyzeVisualScenesChunk(
+        script,
+        sentences,
+        chunk.start,
+        chunk.end,
+        storyBible,
+        c + 1,
+        chunks.length,
+        userApiKey,
+      );
+      allVisualScenes = allVisualScenes.concat(chunkScenes);
+    }
+
+    const visualScenes = validateAndFillSentenceCoverage(allVisualScenes, sentences, storyBible.analysis);
+    return { storyBible, visualScenes };
+  }
+
+  onProgress?.("AI is reading your entire script to understand the full story...", 1, 4);
+
+  const fullStoryParams = buildFullStoryParams(script);
+  const stream = getAnthropicClient(userApiKey).messages.stream(fullStoryParams);
+
+  const message = await stream.finalMessage();
+
+  const content = message.content[0];
+  if (content.type !== "text") {
+    throw new Error("Unexpected response type from Claude");
+  }
+
+  if (message.stop_reason === "max_tokens") {
+    console.warn("Claude response was truncated due to max_tokens limit. Attempting JSON repair...");
+  }
+
+  return parseFullStoryResult(content.text, sentences);
+}
+
+export function buildSequencePromptParams(
   scene: VisualScene,
   sceneIndex: number,
   totalScenes: number,
@@ -1117,8 +1157,7 @@ export async function generateSequencePrompts(
   prevScene: VisualScene | null,
   nextScene: VisualScene | null,
   allScenes: VisualScene[],
-  userApiKey?: string,
-): Promise<SceneSequencePrompts> {
+) {
   const analysis = storyBible.analysis;
 
   const memory = buildCumulativeMemory(allScenes, sceneIndex, storyBible);
@@ -1213,12 +1252,12 @@ Mood: ${nextScene.mood}
 The last image of THIS scene should visually bridge toward the next scene.`
     : "This is the FINAL scene of the story — end with visual closure and emotional resolution.";
 
-  const stream = getAnthropicClient(userApiKey).messages.stream({
-    model: "claude-opus-4-6",
+  return {
+    model: "claude-opus-4-6" as const,
     max_tokens: 128000,
     messages: [
       {
-        role: "user",
+        role: "user" as const,
         content: `You are a world-class cinematographer, director, and visual storytelling master. You are creating image prompts for ONE scene of a visual story. These images will be rendered as Unreal Engine 5 cinematic CGI frames — high-fidelity 3D renders with slight stylization (NOT photographs, NOT photorealistic). Characters should look like premium video game cutscene quality, clearly CGI but extremely detailed. The frames must flow like actual film frames with PERFECT visual consistency.
 
 You have COMPLETE creative freedom for camera angles, shot types, lens choices, and compositions. There is NO formula — a dialogue scene needs different shots than a dogfight. You decide everything based on what serves this specific moment.
@@ -1500,28 +1539,19 @@ Return JSON only (no markdown, no code fences):
 The shotLabels, motionPrompts, and prompts arrays MUST all have the same length (between 3 and 17).`,
       },
     ],
-  });
+  };
+}
 
-  const message = await stream.finalMessage();
-
-  const content = message.content[0];
-  if (content.type !== "text") {
-    throw new Error("Unexpected response type from Claude");
-  }
-
-  if (message.stop_reason === "max_tokens") {
-    console.warn(`Scene ${sceneIndex + 1}: Claude response truncated (max_tokens). Attempting repair...`);
-  }
-
+export function parseSequencePromptResult(text: string, scene: VisualScene, sceneIndex: number): SceneSequencePrompts {
   let result: any;
   try {
-    result = parseJsonResponse(content.text);
+    result = parseJsonResponse(text);
   } catch (parseErr) {
-    console.error(`Scene ${sceneIndex + 1}: JSON parse failed. Raw response length: ${content.text.length}`);
-    console.error(`Scene ${sceneIndex + 1}: First 500 chars: ${content.text.substring(0, 500)}`);
-    console.error(`Scene ${sceneIndex + 1}: Last 500 chars: ${content.text.substring(content.text.length - 500)}`);
+    console.error(`Scene ${sceneIndex + 1}: JSON parse failed. Raw response length: ${text.length}`);
+    console.error(`Scene ${sceneIndex + 1}: First 500 chars: ${text.substring(0, 500)}`);
+    console.error(`Scene ${sceneIndex + 1}: Last 500 chars: ${text.substring(text.length - 500)}`);
 
-    result = repairPromptArrayJson(content.text);
+    result = repairPromptArrayJson(text);
     if (!result) {
       throw parseErr;
     }
@@ -1561,6 +1591,33 @@ The shotLabels, motionPrompts, and prompts arrays MUST all have the same length 
     cameraAngle: result.cameraAngle || "Cinematic sequence",
     transitionNote: result.transitionNote || "",
   };
+}
+
+export async function generateSequencePrompts(
+  scene: VisualScene,
+  sceneIndex: number,
+  totalScenes: number,
+  storyBible: StoryBible,
+  prevScene: VisualScene | null,
+  nextScene: VisualScene | null,
+  allScenes: VisualScene[],
+  userApiKey?: string,
+): Promise<SceneSequencePrompts> {
+  const params = buildSequencePromptParams(scene, sceneIndex, totalScenes, storyBible, prevScene, nextScene, allScenes);
+  const stream = getAnthropicClient(userApiKey).messages.stream(params);
+
+  const message = await stream.finalMessage();
+
+  const content = message.content[0];
+  if (content.type !== "text") {
+    throw new Error("Unexpected response type from Claude");
+  }
+
+  if (message.stop_reason === "max_tokens") {
+    console.warn(`Scene ${sceneIndex + 1}: Claude response truncated (max_tokens). Attempting repair...`);
+  }
+
+  return parseSequencePromptResult(content.text, scene, sceneIndex);
 }
 
 export function splitIntoSentences(script: string): string[] {

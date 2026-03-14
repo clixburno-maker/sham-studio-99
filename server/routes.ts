@@ -1,7 +1,8 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { analyzeFullStory, generateSequencePrompts, analyzeAndImprovePrompt, applyFeedbackToPrompt, generateSmartMotionPrompt, generateMotionPromptWithFeedback, type VisualScene, type StoryBible } from "./ai-analyzer";
+import { analyzeFullStory, generateSequencePrompts, analyzeAndImprovePrompt, applyFeedbackToPrompt, generateSmartMotionPrompt, generateMotionPromptWithFeedback, type VisualScene, type StoryBible, splitIntoSentences, buildFullStoryParams, parseFullStoryResult, buildStoryBibleParams, parseStoryBibleResult, buildVisualScenesChunkParams, parseVisualScenesChunkResult, validateAndFillSentenceCoverage, buildSequencePromptParams, parseSequencePromptResult } from "./ai-analyzer";
+import { submitBatch, pollBatchUntilDone, formatElapsed, type BatchRequest } from "./anthropic-batch";
 import { generateImage, checkImageStatus, generateVideo, checkVideoStatus, VIDEO_MODELS, getVideoModelConfig, IMAGE_MODELS, getImageModelConfig, type VideoModelId, type ImageModelId } from "./nanobanana";
 import { insertProjectSchema, insertNicheSchema, type ScriptAnalysis } from "@shared/schema";
 import { extractChannelTranscripts, extractSelectedVideoTranscripts, getChannelVideos } from "./youtube";
@@ -1073,20 +1074,92 @@ Write the script now. Output ONLY the script text, nothing else.`,
       analysisRunning.add(project.id);
 
       await storage.updateProject(project.id, { status: "analyzing" });
-      await setProgressDb(project.id, "reading", "Reading and parsing your complete story...", 1, 5);
+      await setProgressDb(project.id, "reading", "Reading and parsing your complete story...", 1, 6);
 
       res.json({ status: "started", message: "Analysis started. Poll progress for updates." });
 
       (async () => {
         try {
-          await setProgressDb(project.id, "comprehending", "AI is reading your entire script to understand the full story - characters, narrative arc, visual flow...", 2, 5);
-          const { storyBible, visualScenes } = await analyzeFullStory(
-            project.script,
-            async (detail, current, total) => {
-              await setProgressDb(project.id, "comprehending", detail, current, total);
-            },
-            userKeys.anthropic,
-          );
+          const sentences = splitIntoSentences(project.script);
+          const CHUNK_THRESHOLD = 150;
+          const isLongScript = sentences.length > CHUNK_THRESHOLD;
+          let storyBible: StoryBible;
+          let visualScenes: VisualScene[];
+
+          if (isLongScript) {
+            await setProgressDb(project.id, "comprehending", `Long script (${sentences.length} sentences). Submitting Story Bible batch to Anthropic for 50% cost savings...`, 1, 6);
+            const storyBibleParams = buildStoryBibleParams(project.script);
+            const sbBatch = await submitBatch([{ custom_id: "story-bible", params: storyBibleParams }], userKeys.anthropic);
+            await setProgressDb(project.id, "comprehending", `Story Bible batch submitted (${sbBatch.batchId}). Waiting for Anthropic to process — you can navigate away and return later...`, 1, 6);
+
+            const sbResults = await pollBatchUntilDone(sbBatch.batchId, userKeys.anthropic, async (status, elapsed) => {
+              const counts = status.requestCounts;
+              const detail = counts
+                ? `Story Bible batch ${sbBatch.batchId} — processing: ${counts.processing}, done: ${counts.succeeded}, elapsed: ${formatElapsed(elapsed)}`
+                : `Story Bible batch ${sbBatch.batchId} — waiting... elapsed: ${formatElapsed(elapsed)}`;
+              await setProgressDb(project.id, "comprehending", detail, 1, 6);
+            });
+
+            const sbResult = sbResults.find(r => r.custom_id === "story-bible");
+            if (!sbResult?.success || !sbResult.text) throw new Error(sbResult?.error || "Story Bible batch failed");
+            storyBible = parseStoryBibleResult(sbResult.text);
+
+            const CHUNK_SIZE = 50;
+            const chunks: { start: number; end: number }[] = [];
+            for (let i = 0; i < sentences.length; i += CHUNK_SIZE) {
+              chunks.push({ start: i, end: Math.min(i + CHUNK_SIZE, sentences.length) });
+            }
+
+            const vsRequests: BatchRequest[] = chunks.map((chunk, c) => ({
+              custom_id: `visual-scenes-chunk-${c}`,
+              params: buildVisualScenesChunkParams(project.script, sentences, chunk.start, chunk.end, storyBible, c + 1, chunks.length),
+            }));
+
+            await setProgressDb(project.id, "comprehending", `Submitting ${chunks.length} visual scene chunks as batch...`, 2, 6);
+            const vsBatch = await submitBatch(vsRequests, userKeys.anthropic);
+            await setProgressDb(project.id, "comprehending", `Visual scenes batch submitted (${vsBatch.batchId}). Processing ${chunks.length} chunks — you can navigate away...`, 2, 6);
+
+            const vsResults = await pollBatchUntilDone(vsBatch.batchId, userKeys.anthropic, async (status, elapsed) => {
+              const counts = status.requestCounts;
+              const detail = counts
+                ? `Visual scenes batch ${vsBatch.batchId} — done: ${counts.succeeded}/${chunks.length}, elapsed: ${formatElapsed(elapsed)}`
+                : `Visual scenes batch ${vsBatch.batchId} — waiting... elapsed: ${formatElapsed(elapsed)}`;
+              await setProgressDb(project.id, "comprehending", detail, 2, 6);
+            });
+
+            let allVisualScenes: VisualScene[] = [];
+            for (let c = 0; c < chunks.length; c++) {
+              const chunk = chunks[c];
+              const vsResult = vsResults.find(r => r.custom_id === `visual-scenes-chunk-${c}`);
+              if (!vsResult?.success || !vsResult.text) {
+                console.error(`Visual scenes chunk ${c} failed: ${vsResult?.error || "no result"}`);
+                continue;
+              }
+              const chunkScenes = parseVisualScenesChunkResult(vsResult.text, sentences, chunk.start, chunk.end, storyBible, `Chunk ${c + 1}`);
+              allVisualScenes = allVisualScenes.concat(chunkScenes);
+            }
+            visualScenes = validateAndFillSentenceCoverage(allVisualScenes, sentences, storyBible.analysis);
+
+          } else {
+            await setProgressDb(project.id, "comprehending", `Submitting script analysis batch to Anthropic for 50% cost savings (${sentences.length} sentences)...`, 1, 6);
+            const fullParams = buildFullStoryParams(project.script);
+            const fullBatch = await submitBatch([{ custom_id: "full-story", params: fullParams }], userKeys.anthropic);
+            await setProgressDb(project.id, "comprehending", `Analysis batch submitted (${fullBatch.batchId}). Waiting for Anthropic — you can navigate away and return later...`, 1, 6);
+
+            const fullResults = await pollBatchUntilDone(fullBatch.batchId, userKeys.anthropic, async (status, elapsed) => {
+              const counts = status.requestCounts;
+              const detail = counts
+                ? `Analysis batch ${fullBatch.batchId} — processing: ${counts.processing}, done: ${counts.succeeded}, elapsed: ${formatElapsed(elapsed)}`
+                : `Analysis batch ${fullBatch.batchId} — waiting... elapsed: ${formatElapsed(elapsed)}`;
+              await setProgressDb(project.id, "comprehending", detail, 1, 6);
+            });
+
+            const fullResult = fullResults.find(r => r.custom_id === "full-story");
+            if (!fullResult?.success || !fullResult.text) throw new Error(fullResult?.error || "Full story batch failed");
+            const parsed = parseFullStoryResult(fullResult.text, sentences);
+            storyBible = parsed.storyBible;
+            visualScenes = parsed.visualScenes;
+          }
 
           storyBibleCache.set(project.id, storyBible);
           visualScenesCache.set(project.id, visualScenes);
@@ -1096,7 +1169,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
           const jetCount = analysis.jets?.length || 0;
           const locCount = analysis.locations?.length || 0;
           const sceneCount = visualScenes.filter(s => s.isVisual).length;
-          await setProgressDb(project.id, "analyzed", `Story understood: ${charCount} characters, ${jetCount} aircraft, ${locCount} locations, ${sceneCount} visual beats identified`, 3, 5);
+          await setProgressDb(project.id, "analyzed", `Story understood: ${charCount} characters, ${jetCount} aircraft, ${locCount} locations, ${sceneCount} visual beats identified`, 3, 6);
 
           await storage.updateProject(project.id, { analysis: analysis as any });
 
@@ -1107,57 +1180,66 @@ Write the script now. Output ONLY the script text, nothing else.`,
           const visualOnlyScenes = visualScenes.filter(s => s.isVisual);
           const totalPromptSteps = visualOnlyScenes.length;
 
-          let completedPrompts = 0;
-          await setProgressDb(
-            project.id,
-            "prompts",
-            `Crafting image sequences for all ${totalPromptSteps} scenes in parallel...`,
-            0,
-            totalPromptSteps
-          );
+          if (totalPromptSteps === 0) {
+            await storage.updateProject(project.id, { status: "analyzed" });
+            await setProgressDb(project.id, "complete", "Analysis complete — no visual scenes found in script.", 0, 0);
+            console.log(`Analysis complete for project ${project.id}: 0 visual scenes`);
+            return;
+          }
 
-          const promptResults = await Promise.all(
-            visualOnlyScenes.map(async (vs, index) => {
-              const prevVs = index > 0 ? visualOnlyScenes[index - 1] : null;
-              const nextVs = index < visualOnlyScenes.length - 1 ? visualOnlyScenes[index + 1] : null;
+          const promptRequests: BatchRequest[] = visualOnlyScenes.map((vs, index) => {
+            const prevVs = index > 0 ? visualOnlyScenes[index - 1] : null;
+            const nextVs = index < visualOnlyScenes.length - 1 ? visualOnlyScenes[index + 1] : null;
+            return {
+              custom_id: `scene-prompt-${index}`,
+              params: buildSequencePromptParams(vs, index, visualOnlyScenes.length, storyBible, prevVs, nextVs, visualOnlyScenes),
+            };
+          });
 
-              let seqResult;
-              try {
-                seqResult = await generateSequencePrompts(
-                  vs, index, visualOnlyScenes.length, storyBible, prevVs, nextVs, visualOnlyScenes,
-                userKeys.anthropic,
-              );
-              } catch (promptErr: any) {
-                console.error(`Scene ${index + 1} prompt generation failed: ${promptErr.message}. Using fallback prompts.`);
-                const fallbackPrompt = `Unreal Engine 5 cinematic 3D render, high-fidelity CGI with slight stylization — NOT a photograph, cinematic 8K, 16:9 widescreen aspect ratio. ${vs.visualBeat}. ${vs.mood} mood, ${vs.timeOfDay}, ${vs.location}. Cinematic military aviation CGI, Unreal Engine 5 quality, volumetric lighting, motion blur where appropriate, film grain, no text, no watermarks, no UI elements, no cartoons.`;
-                seqResult = {
-                  prompts: [fallbackPrompt, fallbackPrompt],
-                  shotLabels: ["Wide Establishing", "Medium Shot"],
-                  sceneDescription: vs.sceneDescription || vs.visualBeat,
-                  mood: vs.mood,
-                  timeOfDay: vs.timeOfDay,
-                  cameraAngle: "Cinematic sequence",
-                  transitionNote: "",
-                };
-              }
+          await setProgressDb(project.id, "prompts", `Submitting ${totalPromptSteps} scene prompts as batch for 50% savings...`, 0, totalPromptSteps);
+          const promptBatch = await submitBatch(promptRequests, userKeys.anthropic);
+          await setProgressDb(project.id, "prompts", `Scene prompts batch submitted (${promptBatch.batchId}). Processing ${totalPromptSteps} prompts — you can navigate away...`, 0, totalPromptSteps);
 
-              completedPrompts++;
-              await setProgressDb(
-                project.id,
-                "prompts",
-                `Completed ${completedPrompts}/${totalPromptSteps} scene prompts...`,
-                completedPrompts,
-                totalPromptSteps
-              );
-
-              return { index, vs, seqResult };
-            })
-          );
-
-          promptResults.sort((a, b) => a.index - b.index);
+          const promptResults = await pollBatchUntilDone(promptBatch.batchId, userKeys.anthropic, async (status, elapsed) => {
+            const counts = status.requestCounts;
+            const succeeded = counts?.succeeded || 0;
+            const detail = counts
+              ? `Prompts batch ${promptBatch.batchId} — done: ${succeeded}/${totalPromptSteps}, elapsed: ${formatElapsed(elapsed)}`
+              : `Prompts batch ${promptBatch.batchId} — waiting... elapsed: ${formatElapsed(elapsed)}`;
+            await setProgressDb(project.id, "prompts", detail, succeeded, totalPromptSteps);
+          });
 
           let createdCount = 0;
-          for (const { index, vs, seqResult } of promptResults) {
+          for (let index = 0; index < visualOnlyScenes.length; index++) {
+            const vs = visualOnlyScenes[index];
+            const promptResult = promptResults.find(r => r.custom_id === `scene-prompt-${index}`);
+
+            let seqResult;
+            if (promptResult?.success && promptResult.text) {
+              try {
+                seqResult = parseSequencePromptResult(promptResult.text, vs, index);
+              } catch (parseErr: any) {
+                console.error(`Scene ${index + 1} prompt parse failed: ${parseErr.message}. Using fallback.`);
+                seqResult = null;
+              }
+            } else {
+              console.error(`Scene ${index + 1} batch failed: ${promptResult?.error || "no result"}. Using fallback.`);
+              seqResult = null;
+            }
+
+            if (!seqResult) {
+              const fallbackPrompt = `Unreal Engine 5 cinematic 3D render, high-fidelity CGI with slight stylization — NOT a photograph, cinematic 8K, 16:9 widescreen aspect ratio. ${vs.visualBeat}. ${vs.mood} mood, ${vs.timeOfDay}, ${vs.location}. Cinematic military aviation CGI, Unreal Engine 5 quality, volumetric lighting, motion blur where appropriate, film grain, no text, no watermarks, no UI elements, no cartoons.`;
+              seqResult = {
+                prompts: [fallbackPrompt, fallbackPrompt],
+                shotLabels: ["Wide Establishing", "Medium Shot"],
+                sceneDescription: vs.sceneDescription || vs.visualBeat,
+                mood: vs.mood,
+                timeOfDay: vs.timeOfDay,
+                cameraAngle: "Cinematic sequence",
+                transitionNote: "",
+              };
+            }
+
             await storage.createScene({
               projectId: project.id,
               sentenceIndex: index,
@@ -1194,7 +1276,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
           }
 
           const scriptWordCount = project.script.split(/\s+/).length;
-          const estimatedAnalysisCost = Math.max(0.10, (scriptWordCount / 1000) * 0.15 + createdCount * 0.05);
+          const estimatedAnalysisCost = Math.max(0.05, ((scriptWordCount / 1000) * 0.15 + createdCount * 0.05) * 0.5);
           storage.addProjectCost(project.id, "analysisCost", parseFloat(estimatedAnalysisCost.toFixed(4))).catch(() => {});
 
           await storage.updateProject(project.id, {
@@ -1244,7 +1326,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
           }
         } catch (err: any) {
           console.error("Analysis error:", err);
-          await setProgressDb(project.id, "error", err.message || "Analysis failed unexpectedly.", 0, 5);
+          await setProgressDb(project.id, "error", err.message || "Analysis failed unexpectedly.", 0, 6);
           try {
             await storage.updateProject(project.id, { status: "draft" });
           } catch {}

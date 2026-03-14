@@ -26,7 +26,7 @@ Once a project exists, the system analyzes the script using Claude Opus 4.6, bui
 - **Backend**: Express.js API
 - **Database**: PostgreSQL with Drizzle ORM
 - **AI Script Writing**: Claude Sonnet via Anthropic API (topic → script generation)
-- **AI Analysis**: Claude Opus 4.6 via Anthropic API directly (uses ANTHROPIC_API_KEY)
+- **AI Analysis**: Claude Opus 4.6 via Anthropic Message Batches API for 50% cost savings (uses ANTHROPIC_API_KEY)
 - **Voiceover**: ElevenLabs API (text-to-speech with voice selection)
 - **Image Generation**: NanoBanana Pro only via EvoLink.AI API gateway (api.evolink.ai):
   - NanoBanana Pro ($0.05/image, 4K, Gemini-powered) - default, proven quality, up to 3 ref images
@@ -67,7 +67,8 @@ Once a project exists, the system analyzes the script using Claude Opus 4.6, bui
 ## Key Files
 - `shared/schema.ts` - Data models (projects with voiceoverUrl, scenes with shotLabels/expectedImages, generatedImages, characterReferences with angle)
 - `server/routes.ts` - API endpoints with StoryBible/VisualScene caching + script generation + voiceover routes
-- `server/ai-analyzer.ts` - Full-story AI comprehension engine (Story Bible + visual beat grouping + unrestricted cinematographer prompts)
+- `server/ai-analyzer.ts` - Full-story AI comprehension engine (Story Bible + visual beat grouping + unrestricted cinematographer prompts) with batch-compatible param builders/parsers
+- `server/anthropic-batch.ts` - Anthropic Message Batches API module (submitBatch, pollBatchUntilDone, getBatchResults, formatElapsed)
 - `server/script-analyzer.ts` - Legacy script analysis engine (character/jet/location extraction via regex)
 - `server/nanobanana.ts` - Image generation API integration (NanoBanana Pro only) and video generation
 - `server/elevenlabs.ts` - ElevenLabs TTS integration (voice listing + voiceover generation)
@@ -84,11 +85,23 @@ Once a project exists, the system analyzes the script using Claude Opus 4.6, bui
 4. **Voiceover**: ElevenLabs generates AI voiceover with voice selection, user can preview
 5. **Create Project**: Project created with script + voiceover URL, navigates to project view
 
-## AI Analysis Flow
-1. **Full-Story Comprehension**: Claude reads entire script in one pass, builds Story Bible with ultra-detailed descriptions of ALL elements
-2. **Visual Beat Grouping**: Sentences grouped into visual beats by an AI film editor
+## AI Analysis Flow (Batch API — 50% cost savings)
+Uses Anthropic Message Batches API instead of real-time streaming. All analysis steps are submitted as batches, polled with exponential backoff, and progress is persisted to the database. Users can navigate away and return hours later.
+
+**Batch Pipeline:**
+- Short scripts (≤150 sentences): Single batch with full story analysis (Story Bible + Visual Scenes)
+- Long scripts (>150 sentences): Story Bible batch → Visual Scenes chunks batch → poll each
+- Scene prompts: All scene image prompts submitted as a single batch
+
+**Progress Tracking:** Batch IDs, request counts, elapsed time shown in real-time progress messages. All persisted to DB via `analysisProgress`.
+
+**Key files:** `server/anthropic-batch.ts` (batch submit/poll/results), `server/ai-analyzer.ts` (param builders + parsers)
+
+**Analysis Steps:**
+1. **Full-Story Comprehension**: Claude reads entire script via batch, builds Story Bible with ultra-detailed descriptions of ALL elements
+2. **Visual Beat Grouping**: Sentences grouped into visual beats by an AI film editor (batched for long scripts)
 3. **Cross-Scene Continuity (CumulativeVisualMemory)**: Cumulative memory from previous scenes
-4. **Variable Image Sequence Generation**: Each visual beat gets 3-17 image prompts (complexity-driven: 3-5 for simple moments, 6-9 standard, 10-13 complex action, 14-17 epic climax)
+4. **Variable Image Sequence Generation**: Each visual beat gets 3-17 image prompts via single batch (complexity-driven: 3-5 for simple moments, 6-9 standard, 10-13 complex action, 14-17 epic climax)
 5. **Character Reference Portraits**: Multi-angle reference portrait images (front, 3/4, profile) for visual consistency
 6. **Total Visual Consistency with Identity Anchoring**: ALL element descriptions copied word-for-word into every prompt
 7. **Prompt Quality**: No word limit, 800-2,000+ words per prompt
