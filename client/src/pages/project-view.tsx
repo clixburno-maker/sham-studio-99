@@ -131,6 +131,15 @@ export default function ProjectView() {
     enabled: !!project,
   });
 
+  const { data: charRefsData } = useQuery<any[]>({
+    queryKey: ["/api/projects", id, "character-references"],
+    enabled: !!project && project.status !== "draft",
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      return data?.some((r: any) => r.status === "generating") ? 5000 : false;
+    },
+  });
+
   const hasGeneratingImages = images?.some((img) => img.status === "pending" || img.status === "generating");
   const hasGeneratingVideos = images?.some((img) => img.videoStatus === "generating");
   const [regeneratingImageId, setRegeneratingImageId] = useState<string | null>(null);
@@ -665,6 +674,10 @@ export default function ProjectView() {
   }, [id, toast]);
 
   const analysis = project?.analysis as ScriptAnalysis | null;
+  const hasCharacters = (analysis?.characters?.length ?? 0) > 0;
+  const expectedCharRefs = hasCharacters ? analysis!.characters.length * 3 : 0;
+  const completedCharRefs = charRefsData?.filter((r: any) => r.status === "completed" && r.imageUrl)?.length ?? 0;
+  const charRefsReady = !hasCharacters || completedCharRefs >= expectedCharRefs;
   const totalScenes = scenes?.length || 0;
   const completedImages = images?.filter((img) => img.status === "completed").length || 0;
   const failedImages = images?.filter((img) => img.status === "failed").length || 0;
@@ -790,18 +803,20 @@ export default function ProjectView() {
                 </button>
                 <button
                   onClick={() => generateAllMutation.mutate()}
-                  disabled={generateAllMutation.isPending || isGenerating}
+                  disabled={generateAllMutation.isPending || isGenerating || !charRefsReady}
                   className="inline-flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold gradient-btn text-white border-0 glow-sm hover:glow-md transition-all duration-300 active:scale-[0.97] disabled:opacity-60"
                   data-testid="button-generate-all"
-                  title={`Estimated cost: ${formatCost(imageGenCost)} for ${Math.max(0, remainingImages)} images`}
+                  title={!charRefsReady ? `Generate character portraits first (${completedCharRefs}/${expectedCharRefs} done)` : `Estimated cost: ${formatCost(imageGenCost)} for ${Math.max(0, remainingImages)} images`}
                 >
                   {generateAllMutation.isPending || isGenerating ? (
                     <><Loader2 className="w-4 h-4 animate-spin" />Generating...</>
+                  ) : !charRefsReady ? (
+                    <><Users className="w-4 h-4" />Character Portraits Required ({completedCharRefs}/{expectedCharRefs})</>
                   ) : (
                     <><Play className="w-4 h-4" />Generate All Images ({formatCost(imageGenCost)})</>
                   )}
                 </button>
-                {completedImages > 0 && !isGenerating && !generateAllMutation.isPending && (
+                {completedImages > 0 && !isGenerating && !generateAllMutation.isPending && charRefsReady && (
                   <button
                     onClick={() => setShowRegenAllConfirm(true)}
                     disabled={generateAllMutation.isPending || isGenerating}
@@ -811,7 +826,7 @@ export default function ProjectView() {
                     <RotateCcw className="w-4 h-4" />Regenerate All Images
                   </button>
                 )}
-                {retryableCount > 0 && !isGenerating && !generateAllMutation.isPending && (
+                {retryableCount > 0 && !isGenerating && !generateAllMutation.isPending && charRefsReady && (
                   <button
                     onClick={() => retryFailedMutation.mutate()}
                     disabled={retryFailedMutation.isPending || isGenerating}
@@ -1622,6 +1637,7 @@ export default function ProjectView() {
                   selectedImageModel={selectedImageModel}
                   onDeleteImage={deleteImage}
                   onRemoveVideo={removeVideo}
+                  charRefsReady={charRefsReady}
                 />
               </>
             ) : isAnalyzing ? (
@@ -2137,6 +2153,7 @@ function StoryboardView({
   selectedImageModel,
   onDeleteImage,
   onRemoveVideo,
+  charRefsReady,
 }: {
   projectId: string;
   scenes: Scene[];
@@ -2161,6 +2178,7 @@ function StoryboardView({
   selectedImageModel: string;
   onDeleteImage: (imageId: string) => void;
   onRemoveVideo: (imageId: string) => void;
+  charRefsReady: boolean;
 }) {
   const [lightboxImage, setLightboxImage] = useState<GeneratedImage | null>(null);
   const [imageFeedbackId, setImageFeedbackId] = useState<string | null>(null);
@@ -2333,13 +2351,15 @@ function StoryboardView({
                   size="sm"
                   variant={hasImages ? "outline" : "default"}
                   onClick={() => onGenerate(scene.id)}
-                  disabled={isGenerating && generatingSceneId === scene.id}
+                  disabled={(isGenerating && generatingSceneId === scene.id) || !charRefsReady}
                   className={hasImages ? "glass-border rounded-xl text-xs hover:bg-[var(--glass-highlight)] transition-all duration-200" : "gradient-btn text-white border-0 rounded-xl text-xs"}
                   data-testid={`button-generate-scene-${index}`}
-                  title={`Estimated cost: ${formatCost(expectedCount * costPerImage)}`}
+                  title={!charRefsReady ? "Generate character portraits first" : `Estimated cost: ${formatCost(expectedCount * costPerImage)}`}
                 >
                   {isGenerating && generatingSceneId === scene.id ? (
                     <><Loader2 className="w-3 h-3 mr-1 animate-spin" />Generating</>
+                  ) : !charRefsReady ? (
+                    <><Users className="w-3 h-3 mr-1" />Portraits Required</>
                   ) : hasImages ? (
                     <><RefreshCw className="w-3 h-3 mr-1" />Regenerate ~{formatCost(expectedCount * costPerImage)}</>
                   ) : (

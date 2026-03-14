@@ -63,6 +63,7 @@ Once a project exists, the system analyzes the script using Claude Opus 4.6, bui
 - **Ownership checks**: Both endpoints verify `scene.projectId === project.id` to prevent cross-project access
 
 ## Character Reference System
+- **Portraits required before storyboard**: If a project has characters, all character portraits (3 per character: front, three-quarter, profile) must be completed before any storyboard image generation is allowed. Generate All, Regenerate All, Retry Failed, Smart Fix, and individual scene generate buttons are all gated. The charRefs query auto-polls every 5s while portraits are generating, so buttons enable automatically once done.
 - **Multi-angle portraits**: Each character gets 3 portraits (front view, three-quarter view, side profile)
 - **Database**: `characterReferences` table with `angle` column (values: "front", "three-quarter", "profile")
 - **Consistency regeneration**: Scene images can be regenerated using character reference portraits for consistency
