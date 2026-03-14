@@ -88,7 +88,7 @@ Once a project exists, the system analyzes the script using Claude Opus 4.6, bui
 1. **Full-Story Comprehension**: Claude reads entire script in one pass, builds Story Bible with ultra-detailed descriptions of ALL elements
 2. **Visual Beat Grouping**: Sentences grouped into visual beats by an AI film editor
 3. **Cross-Scene Continuity (CumulativeVisualMemory)**: Cumulative memory from previous scenes
-4. **Variable Image Sequence Generation**: Each visual beat gets 2-10 image prompts
+4. **Variable Image Sequence Generation**: Each visual beat gets 3-17 image prompts (complexity-driven: 3-5 for simple moments, 6-9 standard, 10-13 complex action, 14-17 epic climax)
 5. **Character Reference Portraits**: Multi-angle reference portrait images (front, 3/4, profile) for visual consistency
 6. **Total Visual Consistency with Identity Anchoring**: ALL element descriptions copied word-for-word into every prompt
 7. **Prompt Quality**: No word limit, 800-2,000+ words per prompt
@@ -99,9 +99,9 @@ Once a project exists, the system analyzes the script using Claude Opus 4.6, bui
    - Layer 3: `buildVideoPrompt()` — smart fallback with image-aware camera selection (wide→lateral drift, close-up→push-in, battle→handheld drift, sunset→crane), environment-specific motion (ocean/sky/fire/rain/snow/jungle/desert/night), and expanded subject detection (aircraft/vessel/vehicle/portrait)
 
 ## Scene Data
-- `scene.promptBase` - JSON string array of 2-10 image prompts (variable per scene)
+- `scene.promptBase` - JSON string array of 3-17 image prompts (variable per scene, complexity-driven)
 - `scene.shotLabels` - JSON string array of AI-chosen shot labels
-- `scene.expectedImages` - Integer: how many images this scene should have (2-10)
+- `scene.expectedImages` - Integer: how many images this scene should have (3-17)
 - `scene.context` - JSON string with metadata
 - `scene.sceneDescription` - AI-generated description of the visual beat
 - `scene.mood`, `scene.timeOfDay`, `scene.location` - Scene metadata from AI analysis

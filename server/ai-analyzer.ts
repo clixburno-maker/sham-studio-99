@@ -383,7 +383,7 @@ function repairPromptArrayJson(text: string): any | null {
       pos++;
     }
 
-    if (completePrompts.length < 2) return null;
+    if (completePrompts.length < 3) return null;
 
     const shotLabelsMatch = jsonStr.match(/"shotLabels"\s*:\s*\[/);
     let shotLabels: string[] = [];
@@ -754,6 +754,13 @@ CRITICAL RULES:
 8. WEATHER MUST follow the weatherProgression from the Story Bible. Don't invent random weather — it should match the timeline.
 9. Think like a film editor. Include B-roll beats, reaction shots, environmental establishing shots where the story implies them.
 10. Mark truly non-visual content as isVisual:false, but try hard to find visual anchors for everything.
+
+NARRATIVE TECHNIQUE DETECTION — identify these in the sceneDescription and mood fields:
+11. FLASHBACK/MEMORY: If the script references a past event, memory, or flashback — flag it clearly in sceneDescription with "FLASHBACK:" prefix. Note what visual treatment it needs (desaturated, sepia, softer focus, vignetting).
+12. INTERNAL MONOLOGUE: If the script describes thoughts/feelings rather than visible action — note in sceneDescription how to SHOW this visually (facial close-ups, environmental metaphor, symbolic imagery).
+13. TIME TRANSITIONS: If there's a time jump within the chunk — flag it so image generation creates visual distinction between before/after.
+14. PARALLEL ACTION: If the script intercuts between two simultaneous events — create separate visual beats for each strand so they can be properly visualized.
+15. REVELATION/TWIST: If a key piece of information is revealed — note the dramatic weight so image generation can use appropriate framing (push-in, reaction shot, dramatic lighting shift).
 - Output ONLY valid JSON, nothing else.`,
       },
     ],
@@ -1276,12 +1283,32 @@ GLOBAL VISUAL STYLE (apply to ALL prompts):
 
 IMPORTANT: Read the script text in Section 2 CAREFULLY. Your images must illustrate what the script ACTUALLY SAYS — not what you imagine or invent. Every image should be traceable to a specific sentence or phrase from the script. If the script describes a pilot walking across a flight deck, show THAT. Do not substitute a different action.
 
-Decide how many images this scene needs (minimum 3, maximum 15):
-- Quick transition or simple moment: 3-4 images
-- Standard scene with clear action: 5-8 images
-- Complex action, battle, or emotionally rich moment: 9-15 images
-- Include B-roll, reaction shots, detail inserts, environmental cutaways, POV shots
-- Think about what best conveys the story — choose the number that captures every important visual beat without padding
+Decide how many images this scene needs (minimum 3, maximum 17):
+- Quick transition, single-action moment, or simple establishing beat: 3-5 images
+- Standard scene with dialogue, clear action, or moderate emotional content: 6-9 images
+- Complex action sequence, battle, chase, or major dramatic turning point: 10-13 images
+- Epic climax, elaborate set piece, or emotionally devastating moment with many characters/elements: 14-17 images
+- CRITICAL: Every important sentence, phrase, or story beat in the script text MUST be captured in at least one image. Do NOT skip or gloss over ANY part of the script. If the script mentions a specific action, reaction, object, or detail — it MUST appear in an image.
+- Include B-roll, reaction shots, detail inserts, environmental cutaways, POV shots, establishing shots
+- Think like an editor — what shots does the audience NEED to understand and FEEL this moment?
+
+SENTENCE-TO-IMAGE MAPPING (CRITICAL — DO NOT SKIP STORY MOMENTS):
+Before deciding your shot list, go through EACH sentence in the script text and ask:
+1. What is the KEY VISUAL MOMENT in this sentence? (action, reaction, reveal, detail)
+2. Does this sentence introduce a NEW piece of information the audience needs to see?
+3. Is there an EMOTIONAL SHIFT within this sentence that deserves its own image?
+4. Are there IMPLIED visuals — things the script doesn't explicitly state but the audience should see? (a character's reaction to what was just said, the environment changing, a meaningful detail)
+Create at least one image for each key visual moment. Complex sentences with multiple actions may need 2-3 images.
+
+UNDERSTANDING NARRATIVE TECHNIQUES — MATCH THE VISUAL STYLE TO THE WRITING:
+- FLASHBACK: If the script references a memory or past event, render it with DISTINCT visual treatment — desaturated color palette shifting toward warm sepia or cool blue-grey, slightly softer focus, film grain overlay, subtle vignetting at the edges, lighting that feels more golden/nostalgic or harsh/traumatic depending on the memory's nature. The audience must instantly recognize "this is a memory, not the present."
+- INTERNAL THOUGHT/REALIZATION: When the script describes what a character thinks, feels, or realizes — show it through EXTREME CLOSE-UPS of face (eyes, jaw, hands), environmental metaphor (storm clouds for turmoil, clear sky for clarity), or abstract composition (isolating the character in negative space, rack focus revealing what they're looking at).
+- MONTAGE/TIME PASSAGE: If the script implies time passing or repeated action — vary the camera angles dramatically between images to create visual rhythm. Wide→Close→Wide→Detail→Wide.
+- TENSION/SUSPENSE: Tight compositions, claustrophobic framing, shallow depth of field, characters pressed to frame edges, Dutch angles, extreme close-ups of details (ticking gauges, sweating hands, narrowing eyes).
+- CALM/PEACEFUL: Open compositions with breathing room, wide shots, centered subjects, warm light, high-key lighting, natural framing through environment.
+- HORROR/DREAD: Low angles looking up, wide-angle lens distortion, deep shadows, silhouettes, empty space where something should be, negative space suggesting threat.
+- TRIUMPH/VICTORY: Low angles heroicizing subjects, golden light, expansive skies, dramatic backlighting, subjects centered and dominant in frame.
+- LOSS/GRIEF: High angles looking down (diminishing subjects), cold blue tones, characters small in vast empty spaces, soft focus, rain or mist.
 
 CINEMATOGRAPHIC STORYTELLING TECHNIQUES:
 1. EMOTIONAL FRAMING: Composition conveys emotion. Character alone in vast sky = isolation. Tight cockpit with instruments pressing in = claustrophobia. Two aircraft side by side = partnership.
@@ -1290,13 +1317,16 @@ CINEMATOGRAPHIC STORYTELLING TECHNIQUES:
 4. CHARACTER STATE THROUGH BODY LANGUAGE: Specific physical manifestations — white-knuckled grip, clenched jaw beneath oxygen mask, hunched shoulders, narrowed eyes scanning horizon, trembling fingers on throttle.
 5. ENVIRONMENTAL STORYTELLING: Environment mirrors emotion — turbulent skies for turmoil, golden light for hope, cold blue for isolation, red/amber for danger.
 6. CONTINUITY BRIDGES: Last image connects visually to next scene. If next scene is aerial maneuver, end showing aircraft positioned to begin it.
+7. VISUAL RHYTHM: Vary your shot scale deliberately — don't chain three wide shots or three close-ups in a row. Create a rhythm: Wide→Medium→Close-up→Detail→Wide→POV. This keeps the visual storytelling dynamic and engaging.
+8. MEANINGFUL INSERTS: Detail shots that ADVANCE THE STORY — a fuel gauge needle dropping, a photograph in a locker, a crack spreading across glass, blood on a glove. These inserts add subtext and tension.
+9. REACTION PRIORITY: After any significant action or event, include a REACTION shot showing how characters respond. The reaction is often more powerful than the action itself.
 
-For EACH image, choose the perfect:
-- Shot type (wide establishing, medium, close-up, extreme close-up, OTS, POV, bird's eye, worm's eye, Dutch angle, tracking, crane, dolly zoom, etc.)
-- Camera lens (16mm wide-angle for epic scope, 35mm natural, 50mm portrait, 85mm intimate, 200mm telephoto compression, anamorphic for cinematic flare)
-- Camera position and movement (static, pan, tilt, tracking, orbiting, pull-back reveal, push-in)
-- Composition (rule of thirds, centered, leading lines, foreground framing, depth layers, silhouette)
-- Short descriptive label (e.g. "Cockpit POV", "Wide Aerial", "Reaction Close-up", "Detail Insert")
+For EACH image, choose the MOST CREATIVE and STORY-APPROPRIATE combination of:
+- Shot type: Don't default to medium shots. USE THE FULL RANGE: extreme wide establishing, wide, medium wide, medium, medium close-up, close-up, extreme close-up, over-the-shoulder, POV (first-person through character's eyes), bird's eye (directly overhead), worm's eye (from ground looking up), Dutch angle (tilted for unease), tracking shot (moving alongside), crane shot (rising/descending), dolly zoom (Vertigo effect for disorientation), split diopter (two focal planes), silhouette shot, reflection shot (in water, glass, metal), through-frame (shooting through objects), rack focus (shifting focus between planes)
+- Camera lens: 14mm ultra-wide for distortion/claustrophobia, 16mm wide-angle for epic scope, 24mm wide for environmental context, 35mm natural eye-level, 50mm portrait standard, 85mm intimate close-up, 135mm telephoto for compression/isolation, 200mm extreme telephoto for flattened perspective, anamorphic for horizontal lens flares and cinematic aspect
+- Camera position: high angle (power over subject), low angle (subject empowerment), eye-level (neutral/documentary), canted/Dutch (unease), overhead (god's eye/vulnerability), ground-level (intimacy/danger), through-object (voyeuristic)
+- Composition: rule of thirds, dead center (confrontational), golden ratio, leading lines drawing eye, foreground framing (shooting through doorways, cockpit frames, foliage), depth layers (foreground silhouette, midground subject, background environment), negative space (isolation), symmetry (order/power), broken symmetry (unease), frame-within-frame
+- Short descriptive label (e.g. "Cockpit POV — Fuel Gauge Detail", "Bird's Eye — Formation Over Ocean", "Dutch Angle — Emergency Close-up", "Worm's Eye — Hero Reveal", "Reflection Shot — Canopy Glass")
 
 ╔═══════════════════════════════════════════════════════════════╗
 ║  SECTION 5: ABSOLUTE RULES FOR EVERY IMAGE PROMPT            ║
@@ -1395,7 +1425,7 @@ Return JSON only (no markdown, no code fences):
   "prompts": ["Full ultra-detailed prompt for each image — NO word limit, write as much as needed"]
 }
 
-The shotLabels, motionPrompts, and prompts arrays MUST all have the same length (between 2 and 10).`,
+The shotLabels, motionPrompts, and prompts arrays MUST all have the same length (between 3 and 17).`,
       },
     ],
   });
@@ -1426,11 +1456,11 @@ The shotLabels, motionPrompts, and prompts arrays MUST all have the same length 
     console.log(`Scene ${sceneIndex + 1}: Repaired truncated response, recovered ${result.prompts?.length || 0} prompts`);
   }
 
-  if (!result.prompts || !Array.isArray(result.prompts) || result.prompts.length < 2) {
-    throw new Error("Claude did not return at least 2 prompts for this scene");
+  if (!result.prompts || !Array.isArray(result.prompts) || result.prompts.length < 3) {
+    throw new Error("Claude did not return at least 3 prompts for this scene");
   }
 
-  const promptCount = Math.min(result.prompts.length, 10);
+  const promptCount = Math.min(result.prompts.length, 17);
   const prompts = result.prompts.slice(0, promptCount);
 
   let shotLabels: string[] = result.shotLabels || [];

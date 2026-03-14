@@ -1286,7 +1286,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
         }
       }
 
-      if (prompts.length < 2) {
+      if (prompts.length < 3) {
         const scenes = await storage.getScenesByProject(project.id);
         scenes.sort((a, b) => a.sentenceIndex - b.sentenceIndex);
         const sceneIndex = scenes.findIndex((s) => s.id === scene.id);
@@ -1470,7 +1470,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
           }
         }
 
-        if (prompts.length < 2) {
+        if (prompts.length < 3) {
           const storyBible = await getStoryBible(project.id);
           const cachedVisualScenes = visualScenesCache.get(project.id);
 
@@ -1488,7 +1488,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
           }
         }
 
-        if (prompts.length < 2) continue;
+        if (prompts.length < 3) continue;
         allJobs.push({ scene, sceneIndex: si, prompts, motionPrompts });
       }
 
