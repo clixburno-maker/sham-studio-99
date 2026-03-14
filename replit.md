@@ -92,6 +92,13 @@ Once a project exists, the system analyzes the script using Claude Opus 4.6, bui
 5. **Character Reference Portraits**: Multi-angle reference portrait images (front, 3/4, profile) for visual consistency
 6. **Total Visual Consistency with Identity Anchoring**: ALL element descriptions copied word-for-word into every prompt
 7. **Prompt Quality**: No word limit, 800-2,000+ words per prompt
+8. **Visual Storytelling Mastery System**:
+   - Emotional arc within each scene (establish→escalate→peak, shot scale tightens with intensity)
+   - Visual metaphor & symbolism (isolation through reflections, powerlessness through scale, foreshadowing through shadows)
+   - "Show don't tell" for internal states (fear through environment, determination through framing, grief through absence)
+   - Pacing through shot scale (action=rapid alternation, tension=gradual tightening, quiet=lingering wides)
+   - Contrast & juxtaposition (beauty vs horror, scale contrast, emotional contrast)
+   - Character visual evolution with wear levels (FRESH→EARLY WEAR→MODERATE→HEAVY→SEVERE→AFTERMATH) tracking cumulative physical/emotional toll
 8. **AI-Powered Motion Prompts**: Three-layer motion prompt system with deep image understanding and story-driven motion:
    - Layer 1: Analysis-time motion prompts with anti-morphing rules and subject identity preservation
    - Layer 2: `generateSmartMotionPrompt()` — Claude-powered cinematic motion director that deeply analyzes each image prompt (subjects, mood, composition, story moment), maps mood to motion intensity (tense→creeping, epic→confident, quiet→subtle, chaotic→active), uses full camera vocabulary (dolly/tracking/crane/static/drift), generates rich environmental motion (multiple elements per scene), and produces unique prompts with no word limit (up to 700 words) — complexity-driven length where rich scenes get longer prompts. Model-aware with motion budgets (conservative/moderate/moderate-high/slow-extended). Relaxed anti-morphing for more cinematic results while still protecting subject identity.

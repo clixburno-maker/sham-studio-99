@@ -102,7 +102,7 @@ function buildCumulativeMemory(
 
     const recentIdx = i - startIdx;
     memory.sceneSummaries.push(
-      `[Scene ${i + 1}] ${scene.visualBeat} | Location: ${scene.location} | Time: ${scene.timeOfDay} | Lighting: ${scene.lightingNote || "not specified"} | Mood: ${scene.mood} | Weather: ${scene.weatherConditions || "not specified"} | Characters: ${scene.charactersPresent.join(", ") || "none"} | Aircraft: ${scene.aircraftPresent.join(", ") || "none"} | Vehicles: ${scene.vehiclesPresent.join(", ") || "none"}`
+      `[Scene ${i + 1}] ${scene.visualBeat} | Location: ${scene.location} | Time: ${scene.timeOfDay} | Lighting: ${scene.lightingNote || "not specified"} | Mood: ${scene.mood} | Emotional state: ${scene.emotionalState || scene.mood} | Weather: ${scene.weatherConditions || "not specified"} | Characters: ${scene.charactersPresent.join(", ") || "none"} | Aircraft: ${scene.aircraftPresent.join(", ") || "none"} | Vehicles: ${scene.vehiclesPresent.join(", ") || "none"}`
     );
 
     memory.lastWeather = scene.weatherConditions || memory.lastWeather;
@@ -1148,6 +1148,17 @@ The audience has been on THIS emotional journey. Scene ${sceneIndex + 1} must ac
 ${Object.entries(memory.lastCharacterStates).map(([name, state]) => `  ${name}: ${state}`).join("\n")}`
     : "";
 
+  const storyWearLevel = sceneIndex < totalScenes * 0.15 ? "FRESH — characters and equipment are at their baseline, clean and composed"
+    : sceneIndex < totalScenes * 0.35 ? "EARLY WEAR — slight signs of strain, minor perspiration, focused intensity beginning to show"
+    : sceneIndex < totalScenes * 0.55 ? "MODERATE WEAR — visible fatigue, sweat, dust/grime accumulating, equipment showing use marks, emotional strain visible in eyes and posture"
+    : sceneIndex < totalScenes * 0.75 ? "HEAVY WEAR — exhaustion evident, significant dirt/damage/sweat, equipment battered, deep emotional weight visible in every gesture and expression"
+    : sceneIndex < totalScenes * 0.9 ? "SEVERE WEAR — characters pushed to their limits, clothing torn/stained, faces drawn and haggard, equipment barely functional, the full cost of events written on everything"
+    : "AFTERMATH — the weight of the entire story visible on characters and world, whatever state they've earned through the narrative";
+
+  const characterEvolutionContext = `CHARACTER & EQUIPMENT VISUAL EVOLUTION (scene ${sceneIndex + 1} of ${totalScenes}, ${storyPosition} phase):
+Current wear level: ${storyWearLevel}
+Characters, clothing, equipment, and vehicles should show CUMULATIVE effects of everything that has happened so far in the story. Each scene should look slightly more worn than the last. This is NOT optional — a character in scene 20 must look noticeably different from scene 1. Show the physical and emotional toll of the narrative through visual details.`;
+
   const continuityDelta = scene.environmentalContinuity
     ? `ENVIRONMENTAL CONTINUITY FROM PREVIOUS SCENE:
 ${scene.environmentalContinuity}
@@ -1232,6 +1243,8 @@ ${recentScenesContext}
 ${emotionalArcContext}
 
 ${characterStateContext}
+
+${characterEvolutionContext}
 
 ╔═══════════════════════════════════════════════════════════════╗
 ║  SECTION 2: SCENE-TO-SCENE CONTINUITY                        ║
@@ -1329,7 +1342,65 @@ For EACH image, choose the MOST CREATIVE and STORY-APPROPRIATE combination of:
 - Short descriptive label (e.g. "Cockpit POV — Fuel Gauge Detail", "Bird's Eye — Formation Over Ocean", "Dutch Angle — Emergency Close-up", "Worm's Eye — Hero Reveal", "Reflection Shot — Canopy Glass")
 
 ╔═══════════════════════════════════════════════════════════════╗
-║  SECTION 5: ABSOLUTE RULES FOR EVERY IMAGE PROMPT            ║
+║  SECTION 5: VISUAL STORYTELLING MASTERY                       ║
+║  THESE TECHNIQUES SEPARATE GREAT STORYBOARDS FROM GENERIC ONES║
+╚═══════════════════════════════════════════════════════════════╝
+
+TECHNIQUE A — EMOTIONAL ARC WITHIN THE SCENE:
+Plan your image sequence as a MINI STORY ARC within this scene. Don't just illustrate events — build emotional momentum:
+- Image 1-2: ESTABLISH the emotional baseline (where are we, how do characters feel right now?)
+- Middle images: ESCALATE or DEVELOP the emotion (tension builds, hope grows, fear deepens)
+- Final images: PEAK or TRANSFORM (the emotional payoff — the moment that matters most)
+Your shot scale should reflect this arc: start wider for context, get progressively tighter as emotion intensifies, pull back out for release or transition. The audience should FEEL the emotional journey just from the shot progression.
+
+TECHNIQUE B — VISUAL METAPHOR & SYMBOLISM:
+Don't just show literal events — find the VISUAL METAPHOR that makes the moment resonate:
+- ISOLATION: Character's reflection in glass (canopy, window, water) — they're trapped inside their own world
+- POWERLESSNESS: Tiny human figure dwarfed by enormous machinery, landscape, or sky
+- DECISION/CROSSROADS: Composition splits the frame — light on one side, shadow on the other; two paths; character at a junction point
+- ENTRAPMENT: Frame the character THROUGH objects — cockpit struts, doorframes, barbed wire, cage-like structures
+- MEMORY/NOSTALGIA: A detail that connects to an earlier moment — the same object seen differently now
+- FORESHADOWING: A shadow, reflection, or background element that hints at what's coming
+- CONNECTION: Two characters framed together, sharing the same light, mirroring each other's poses
+- LOSS: Empty space where someone/something used to be — an empty chair, an abandoned tool, a gap in a formation
+Use at least ONE visual metaphor per scene. State it explicitly in the prompt: "This composition uses [technique] to convey [emotion]."
+
+TECHNIQUE C — "SHOW DON'T TELL" FOR INTERNAL STATES:
+When the script describes what a character THINKS, FEELS, or REALIZES — NEVER just show them "looking thoughtful." Instead:
+- FEAR: Show it through the ENVIRONMENT reflecting their state — instrument panel casting red warning light on their face, shadows closing in around them, hands white-knuckled on controls, sweat beads on metal surfaces, shallow panicked breathing visible in cold air
+- DETERMINATION: Show it through BODY LANGUAGE and FRAMING — jaw set, eyes locked forward, hands steady on controls, lit from ahead (moving toward the light), centered and dominant in frame
+- GRIEF: Show it through ABSENCE and EMPTINESS — empty space where someone was, character small in vast landscape, muted colors, soft unfocused background suggesting the world has lost its clarity
+- REALIZATION: Show it through FOCUS SHIFT — rack focus from one element to another, character's eyes widening with light reflecting in them, a detail suddenly sharp while everything else blurs
+- CONFLICT: Show it through DIVIDED COMPOSITION — character positioned between two opposing elements (duty vs safety, past vs future), split lighting (half in light, half in shadow), conflicting colors in the frame
+
+TECHNIQUE D — PACING THROUGH SHOT SCALE:
+Control the RHYTHM of your image sequence like a film editor controls pacing:
+- ACTION SEQUENCES: Rapid alternation between scales — Wide→Close→Detail→Wide→POV→Close. Each image captures a single beat. Quick, punchy, varied angles. More images, each showing one moment.
+- TENSION/SUSPENSE: Gradual, creeping tightening — Wide→Medium→Medium Close→Close-up→Extreme Close-up. Each image slightly closer, slightly more claustrophobic. Fewer cuts, lingering on details.
+- EMOTIONAL/QUIET MOMENTS: Linger on wide shots and medium shots. Let the environment breathe. Use longer, contemplative compositions with space. Fewer images, each given more weight.
+- REVELATION: Build with tight shots that hide context, then PULL BACK to a wide shot that reveals everything. Or: establish with a wide shot, then PUSH IN to an extreme close-up on the crucial detail.
+- TRANSITIONS: End a scene with a visual that bridges to the next scene — similar composition, color, or shape that connects them.
+
+TECHNIQUE E — CONTRAST & JUXTAPOSITION:
+The most powerful images come from CONTRAST. Actively seek these opportunities:
+- BEAUTY vs HORROR: A gorgeous sunset behind a scene of destruction. Flowers growing through wreckage. A peaceful landscape with war machines crossing it.
+- SCALE CONTRAST: A tiny human figure against a massive aircraft, ship, or landscape. Or the reverse — an extreme close-up of a small detail (a photograph, a medal, a bullet casing) that carries enormous emotional weight.
+- EMOTIONAL CONTRAST: A character's calm exterior vs visual clues of their inner turmoil (steady hands but tensed shoulders, composed face but white knuckles)
+- TEMPORAL CONTRAST: The same location/object shown at different points — pristine vs damaged, full vs empty, day vs night
+- ORDER vs CHAOS: A neatly organized cockpit panel next to a shattered windshield. A formation of aircraft with one breaking away. Geometric military order against organic natural landscape.
+Include at least ONE powerful contrast per scene. State it: "This image creates a contrast between [X] and [Y] to convey [emotion]."
+
+TECHNIQUE F — CHARACTER VISUAL EVOLUTION:
+Characters should NOT look identical throughout the story. They EVOLVE based on what they've been through:
+- PHYSICAL WEAR: As the story progresses, show accumulating evidence of the journey — increasing sweat, dirt, grime, oil stains, torn fabric, ruffled hair, bloodshot eyes, five o'clock shadow, chapped lips, sunburn
+- EMOTIONAL WEAR: Posture changes through the story — starting upright and confident, gradually slumping under exhaustion or weight of events; or starting defeated and gradually straightening with resolve
+- EQUIPMENT DEGRADATION: Helmets get scratched, goggles get cracked or dusty, flight suits get stained, instruments get damaged, paint gets chipped. Show the physical toll of events on everything.
+- LIGHTING ON FACE: How light falls on a character's face should evolve with their emotional state — even lighting for calm, harsh side-lighting for conflict, underlighting for dread, backlighting for heroism, soft diffused light for vulnerability
+- CONTEXTUAL EVOLUTION: The same character in different contexts should feel different — confident in their element (cockpit, bridge) vs vulnerable out of it (in water, on ground, captured)
+Track where THIS scene falls in the story arc (${storyPosition}) and show appropriate wear and evolution. Characters in the CLIMAX should look significantly more worn than in the OPENING. Characters in the RESOLUTION should show the full weight of what they've been through.
+
+╔═══════════════════════════════════════════════════════════════╗
+║  SECTION 6: ABSOLUTE RULES FOR EVERY IMAGE PROMPT            ║
 ║  THESE ARE NON-NEGOTIABLE                                    ║
 ╚═══════════════════════════════════════════════════════════════╝
 
@@ -1342,7 +1413,8 @@ a) COPY their COMPLETE appearance description WORD-FOR-WORD from Section 3. Do N
 b) Add IDENTITY FINGERPRINT: Repeat their signatureFeatures from Section 3 verbatim, prefixed with "IDENTITY ANCHOR: This is the same [name] with [fingerprint]."
 c) Add CURRENT EMOTIONAL STATE: Specific facial expression (furrowed brow, clenched jaw, wide eyes, tight lips), body language (white-knuckled grip, hunched shoulders, rigid posture, trembling hands), and what they're feeling in this exact moment.
 d) Add CURRENT POSE AND ACTION: Exactly what they're physically doing — hands on controls, leaning forward, turning head left, pointing, gripping railing.
-e) If multiple characters: describe EACH one fully. NEVER merge or abbreviate secondary characters.
+e) Add VISUAL EVOLUTION: Based on where this scene falls in the story, describe CUMULATIVE wear — additional sweat, grime, exhaustion, damage, emotional toll since the story began. Characters should look progressively more affected by events. Reference the wear level from Section 1.
+f) If multiple characters: describe EACH one fully. NEVER merge or abbreviate secondary characters.
 
 RULE 3 — AIRCRAFT IDENTITY:
 For EACH aircraft in frame:
