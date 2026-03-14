@@ -2229,6 +2229,34 @@ Write the script now. Output ONLY the script text, nothing else.`,
     }
   });
 
+  app.delete("/api/projects/:id/images/:imageId", async (req, res) => {
+    try {
+      const img = await storage.getImageById(req.params.imageId);
+      if (!img) return res.status(404).json({ error: "Image not found" });
+      if (img.projectId !== req.params.id) return res.status(404).json({ error: "Image not found in this project" });
+
+      await storage.deleteImage(img.id);
+      res.json({ status: "deleted", imageId: img.id });
+    } catch (err: any) {
+      console.error("Delete image error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/projects/:id/images/:imageId/remove-video", async (req, res) => {
+    try {
+      const img = await storage.getImageById(req.params.imageId);
+      if (!img) return res.status(404).json({ error: "Image not found" });
+      if (img.projectId !== req.params.id) return res.status(404).json({ error: "Image not found in this project" });
+
+      await storage.updateImage(img.id, { videoUrl: null, videoStatus: null, videoTaskId: null });
+      res.json({ status: "video_removed", imageId: img.id });
+    } catch (err: any) {
+      console.error("Remove video error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post("/api/projects/:id/images/:imageId/regenerate-with-consistency", async (req, res) => {
     try {
       const userKeys = extractUserKeys(req);

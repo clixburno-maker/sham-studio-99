@@ -37,6 +37,7 @@ export interface IStorage {
   createImage(image: InsertImage): Promise<GeneratedImage>;
   createImages(images: InsertImage[]): Promise<GeneratedImage[]>;
   updateImage(id: string, data: Partial<GeneratedImage>): Promise<GeneratedImage>;
+  deleteImage(id: string): Promise<void>;
   deleteImagesByScene(sceneId: string): Promise<void>;
   deleteImagesByProject(projectId: string): Promise<void>;
   deleteProject(id: string): Promise<void>;
@@ -164,6 +165,10 @@ export class DatabaseStorage implements IStorage {
   async updateImage(id: string, data: Partial<GeneratedImage>): Promise<GeneratedImage> {
     const [updated] = await db.update(generatedImages).set(data).where(eq(generatedImages.id, id)).returning();
     return updated;
+  }
+
+  async deleteImage(id: string): Promise<void> {
+    await db.delete(generatedImages).where(eq(generatedImages.id, id));
   }
 
   async deleteImagesByScene(sceneId: string): Promise<void> {

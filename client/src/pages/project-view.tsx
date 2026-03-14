@@ -18,7 +18,7 @@ import {
   ChevronLeft, X, RotateCcw, Video, FileDown, ImageIcon, Film as FilmIcon, Layers,
   DollarSign, FileText, ChevronDown, MessageSquare, Send, Volume2, Mic,
   CheckSquare, Square, Zap, AlertTriangle, Pencil, Crown, Star, ChevronUp, Settings2, BookOpen,
-  Maximize, Users
+  Maximize, Users, Trash2
 } from "lucide-react";
 import type { Project, Scene, GeneratedImage, ScriptAnalysis } from "@shared/schema";
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -439,6 +439,28 @@ export default function ProjectView() {
       setRegeneratingImageId(null);
     }
   }, [id, toast, selectedImageModel]);
+
+  const deleteImage = useCallback(async (imageId: string) => {
+    if (!id) return;
+    try {
+      await apiRequest("DELETE", `/api/projects/${id}/images/${imageId}`);
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "images"] });
+      toast({ title: "Image deleted" });
+    } catch (err: any) {
+      toast({ title: "Failed to delete image", description: err.message, variant: "destructive" });
+    }
+  }, [id, toast]);
+
+  const removeVideo = useCallback(async (imageId: string) => {
+    if (!id) return;
+    try {
+      await apiRequest("POST", `/api/projects/${id}/images/${imageId}/remove-video`);
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "images"] });
+      toast({ title: "Video clip removed" });
+    } catch (err: any) {
+      toast({ title: "Failed to remove video", description: err.message, variant: "destructive" });
+    }
+  }, [id, toast]);
 
   const regenerateSceneWithConsistency = useCallback(async (sceneId: string) => {
     if (!id) return;
@@ -1598,6 +1620,8 @@ export default function ProjectView() {
                   onRegenerateSceneWithConsistency={regenerateSceneWithConsistency}
                   onRegenerateSceneVideosWithFeedback={regenerateSceneVideosWithFeedback}
                   selectedImageModel={selectedImageModel}
+                  onDeleteImage={deleteImage}
+                  onRemoveVideo={removeVideo}
                 />
               </>
             ) : isAnalyzing ? (
@@ -1645,6 +1669,7 @@ export default function ProjectView() {
               onGenerateVideo={generateVideoFromImage}
               videoGeneratingImageId={videoGeneratingImageId}
               selectedVideoModel={selectedVideoModel}
+              onRemoveVideo={removeVideo}
             />
           </TabsContent>
         </Tabs>
@@ -2110,6 +2135,8 @@ function StoryboardView({
   onRegenerateSceneWithConsistency,
   onRegenerateSceneVideosWithFeedback,
   selectedImageModel,
+  onDeleteImage,
+  onRemoveVideo,
 }: {
   projectId: string;
   scenes: Scene[];
@@ -2132,6 +2159,8 @@ function StoryboardView({
   onRegenerateSceneWithConsistency?: (sceneId: string) => void;
   onRegenerateSceneVideosWithFeedback?: (sceneId: string, feedback: string) => void;
   selectedImageModel: string;
+  onDeleteImage: (imageId: string) => void;
+  onRemoveVideo: (imageId: string) => void;
 }) {
   const [lightboxImage, setLightboxImage] = useState<GeneratedImage | null>(null);
   const [imageFeedbackId, setImageFeedbackId] = useState<string | null>(null);
@@ -2659,9 +2688,24 @@ function StoryboardView({
                                           </div>
                                         </DropdownMenuItem>
                                       ))}
+                                      <DropdownMenuItem onClick={() => onRemoveVideo(img.id)} className="text-red-400 focus:text-red-400">
+                                        <div className="flex items-center gap-1.5 w-full">
+                                          <Trash2 className="w-3 h-3" />
+                                          <span className="text-xs font-medium">Remove Video Clip</span>
+                                        </div>
+                                      </DropdownMenuItem>
                                     </DropdownMenuContent>
                                   </DropdownMenu>
                                 ) : null}
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-6 w-6 bg-black/50 text-red-400/80 backdrop-blur-sm rounded-lg hover:text-red-400 hover:bg-red-500/20"
+                                  onClick={(e) => { e.stopPropagation(); if (confirm("Delete this image?")) onDeleteImage(img.id); }}
+                                  title="Delete this image"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </Button>
                               </div>
                               {img.videoStatus === "generating" && (
                                 <div className="absolute top-1 left-1">
@@ -2713,6 +2757,15 @@ function StoryboardView({
                                   title="Retry generation"
                                 >
                                   {regeneratingImageId === img.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-6 w-6 hover:bg-destructive/10 text-red-400/70 hover:text-red-400"
+                                  onClick={() => onDeleteImage(img.id)}
+                                  title="Delete this image"
+                                >
+                                  <Trash2 className="w-3 h-3" />
                                 </Button>
                                 <Button
                                   size="icon"
@@ -3084,6 +3137,7 @@ function ClipsView({
   onGenerateVideo,
   videoGeneratingImageId,
   selectedVideoModel,
+  onRemoveVideo,
 }: {
   projectId: string;
   images: GeneratedImage[];
@@ -3091,6 +3145,7 @@ function ClipsView({
   onGenerateVideo: (imageId: string) => void;
   videoGeneratingImageId: string | null;
   selectedVideoModel: string;
+  onRemoveVideo: (imageId: string) => void;
 }) {
   const currentModel = VIDEO_MODELS.find(m => m.id === selectedVideoModel) || VIDEO_MODELS[0];
   const [playingClipId, setPlayingClipId] = useState<string | null>(null);
@@ -3378,11 +3433,22 @@ function ClipsView({
                         {sceneIdx >= 0 && <Badge variant="outline" className="text-[11px] shrink-0 rounded-lg">Scene {sceneIdx + 1}</Badge>}
                         <span className="text-xs text-muted-foreground truncate">{getShotLabel(scene, img.variant - 1)}</span>
                       </div>
-                      <a href={proxyUrl(img.videoUrl)} target="_blank" rel="noopener noreferrer">
-                        <Button size="icon" variant="ghost" className="h-7 w-7 rounded-lg hover:bg-[var(--glass-highlight)]" data-testid={`button-clip-download-${img.id}`}>
-                          <Download className="w-3 h-3" />
+                      <div className="flex items-center gap-0.5">
+                        <a href={proxyUrl(img.videoUrl)} target="_blank" rel="noopener noreferrer">
+                          <Button size="icon" variant="ghost" className="h-7 w-7 rounded-lg hover:bg-[var(--glass-highlight)]" data-testid={`button-clip-download-${img.id}`}>
+                            <Download className="w-3 h-3" />
+                          </Button>
+                        </a>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 rounded-lg text-red-400/60 hover:text-red-400 hover:bg-red-500/10"
+                          onClick={() => { if (confirm("Remove this video clip?")) onRemoveVideo(img.id); }}
+                          title="Remove video clip"
+                        >
+                          <Trash2 className="w-3 h-3" />
                         </Button>
-                      </a>
+                      </div>
                     </div>
                     {scene?.sceneDescription && (
                       <p className="text-xs text-muted-foreground/60 mt-1 line-clamp-1 leading-relaxed">
