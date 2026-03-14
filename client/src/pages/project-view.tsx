@@ -1577,6 +1577,7 @@ export default function ProjectView() {
                   </Card>
                 )}
                 <StoryboardView
+                  projectId={id!}
                   scenes={scenes}
                   images={images || []}
                   onGenerate={(sceneId) => generateSceneMutation.mutate(sceneId)}
@@ -1596,6 +1597,7 @@ export default function ProjectView() {
                   onRegenerateImageWithConsistency={regenerateImageWithConsistency}
                   onRegenerateSceneWithConsistency={regenerateSceneWithConsistency}
                   onRegenerateSceneVideosWithFeedback={regenerateSceneVideosWithFeedback}
+                  selectedImageModel={selectedImageModel}
                 />
               </>
             ) : isAnalyzing ? (
@@ -2087,6 +2089,7 @@ function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: S
 }
 
 function StoryboardView({
+  projectId,
   scenes,
   images,
   onGenerate,
@@ -2106,7 +2109,9 @@ function StoryboardView({
   onRegenerateImageWithConsistency,
   onRegenerateSceneWithConsistency,
   onRegenerateSceneVideosWithFeedback,
+  selectedImageModel,
 }: {
+  projectId: string;
   scenes: Scene[];
   images: GeneratedImage[];
   onGenerate: (sceneId: string) => void;
@@ -2126,16 +2131,64 @@ function StoryboardView({
   onRegenerateImageWithConsistency?: (imageId: string) => void;
   onRegenerateSceneWithConsistency?: (sceneId: string) => void;
   onRegenerateSceneVideosWithFeedback?: (sceneId: string, feedback: string) => void;
+  selectedImageModel: string;
 }) {
   const [lightboxImage, setLightboxImage] = useState<GeneratedImage | null>(null);
-  const [sceneFeedbackId, setSceneFeedbackId] = useState<string | null>(null);
-  const [sceneFeedbackText, setSceneFeedbackText] = useState("");
   const [imageFeedbackId, setImageFeedbackId] = useState<string | null>(null);
   const [imageFeedbackText, setImageFeedbackText] = useState("");
   const [sceneVideoFeedbackId, setSceneVideoFeedbackId] = useState<string | null>(null);
   const [sceneVideoFeedbackText, setSceneVideoFeedbackText] = useState("");
   const [expandedErrorId, setExpandedErrorId] = useState<string | null>(null);
+  const [sceneChatId, setSceneChatId] = useState<string | null>(null);
+  const [sceneChatMessages, setSceneChatMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
+  const [sceneChatInput, setSceneChatInput] = useState("");
+  const [sceneChatLoading, setSceneChatLoading] = useState(false);
+  const [sceneChatApplying, setSceneChatApplying] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
   const currentModel = VIDEO_MODELS.find(m => m.id === selectedVideoModel) || VIDEO_MODELS[0];
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [sceneChatMessages]);
+
+  const sendChatMessage = async (sceneId: string) => {
+    if (!sceneChatInput.trim() || sceneChatLoading) return;
+    const userMsg = sceneChatInput.trim();
+    setSceneChatInput("");
+    const newMessages = [...sceneChatMessages, { role: "user" as const, content: userMsg }];
+    setSceneChatMessages(newMessages);
+    setSceneChatLoading(true);
+    try {
+      const res = await apiRequest("POST", `/api/projects/${projectId}/scenes/${sceneId}/scene-chat`, { messages: newMessages });
+      const data = await res.json();
+      setSceneChatMessages([...newMessages, { role: "assistant" as const, content: data.reply }]);
+    } catch (err: any) {
+      setSceneChatMessages([...newMessages, { role: "assistant" as const, content: "Sorry, I had trouble understanding. Could you try rephrasing?" }]);
+    } finally {
+      setSceneChatLoading(false);
+    }
+  };
+
+  const applyChatFeedback = async (sceneId: string) => {
+    if (sceneChatMessages.length === 0 || sceneChatApplying) return;
+    setSceneChatApplying(true);
+    try {
+      await apiRequest("POST", `/api/projects/${projectId}/scenes/${sceneId}/apply-scene-chat`, {
+        messages: sceneChatMessages,
+        imageModel: selectedImageModel,
+      });
+      setSceneChatId(null);
+      setSceneChatMessages([]);
+      setSceneChatInput("");
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "images"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId] });
+    } catch (err: any) {
+      console.error("Apply chat feedback failed:", err);
+      setSceneChatMessages(prev => [...prev, { role: "assistant" as const, content: `Failed to apply changes: ${err.message || "Unknown error"}. Please try again.` }]);
+    } finally {
+      setSceneChatApplying(false);
+    }
+  };
 
   const allCompletedImages = [...images]
     .filter(img => img.status === "completed" && img.imageUrl)
@@ -2270,22 +2323,24 @@ function StoryboardView({
                       size="sm"
                       variant="outline"
                       onClick={() => {
-                        if (sceneFeedbackId === scene.id) {
-                          setSceneFeedbackId(null);
-                          setSceneFeedbackText("");
+                        if (sceneChatId === scene.id) {
+                          setSceneChatId(null);
+                          setSceneChatMessages([]);
+                          setSceneChatInput("");
                         } else {
-                          setSceneFeedbackId(scene.id);
-                          setSceneFeedbackText("");
+                          setSceneChatId(scene.id);
+                          setSceneChatMessages([]);
+                          setSceneChatInput("");
                         }
                       }}
-                      disabled={regeneratingSceneId === scene.id}
+                      disabled={regeneratingSceneId === scene.id || sceneChatApplying}
                       className="glass-border rounded-xl text-xs hover:bg-[var(--glass-highlight)] transition-all duration-200"
-                      title="Regenerate all images in this scene with your feedback"
+                      title="Chat with AI director to refine this scene's images"
                     >
-                      {regeneratingSceneId === scene.id ? (
+                      {regeneratingSceneId === scene.id || sceneChatApplying ? (
                         <><Loader2 className="w-3 h-3 mr-1 animate-spin" />Applying...</>
                       ) : (
-                        <><MessageSquare className="w-3 h-3 mr-1" />Scene Feedback</>
+                        <><MessageSquare className="w-3 h-3 mr-1" />Scene Director</>
                       )}
                     </Button>
                     {onRegenerateSceneWithConsistency && (
@@ -2390,72 +2445,94 @@ function StoryboardView({
                 </div>
               )}
 
-              {sceneFeedbackId === scene.id && (
-                <div className="mb-3 p-4 rounded-xl bg-blue-500/5 border border-blue-500/20 animate-in fade-in slide-in-from-top-2 duration-200">
-                  <div className="flex items-center gap-2 mb-2">
-                    <MessageSquare className="w-4 h-4 text-blue-400" />
-                    <span className="text-xs text-blue-300 font-semibold">Scene Feedback</span>
-                  </div>
-                  <p className="text-[11px] text-muted-foreground mb-2.5">
-                    All <span className="font-semibold text-blue-300">{sceneImages.length} images</span> in this scene will be regenerated with your feedback applied to every prompt.
-                  </p>
-                  {sceneImages.length > 0 && (
-                    <div className="flex gap-1 mb-3 flex-wrap">
-                      {sceneImages.filter(img => img.status === "completed" && img.imageUrl).slice(0, 6).map((img) => (
-                        <div key={img.id} className="w-10 h-7 rounded-md overflow-hidden border border-blue-500/20">
-                          <img src={proxyUrl(img.imageUrl)} className="w-full h-full object-cover opacity-60" alt="" />
-                        </div>
-                      ))}
-                      {sceneImages.length > 6 && (
-                        <div className="w-10 h-7 rounded-md bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-[9px] text-blue-300 font-medium">
-                          +{sceneImages.length - 6}
-                        </div>
-                      )}
+              {sceneChatId === scene.id && (
+                <div className="mb-3 rounded-xl bg-blue-500/5 border border-blue-500/20 animate-in fade-in slide-in-from-top-2 duration-200 overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-2.5 border-b border-blue-500/15 bg-blue-500/5">
+                    <div className="flex items-center gap-2">
+                      <MessageSquare className="w-4 h-4 text-blue-400" />
+                      <span className="text-xs text-blue-300 font-semibold">Scene Director Chat</span>
+                      <span className="text-[10px] text-muted-foreground">— describe what you want changed, then apply</span>
                     </div>
-                  )}
-                  <textarea
-                    value={sceneFeedbackText}
-                    onChange={(e) => setSceneFeedbackText(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey && sceneFeedbackText.trim()) {
-                        e.preventDefault();
-                        onRegenerateSceneWithFeedback(scene.id, sceneFeedbackText.trim());
-                        setSceneFeedbackId(null);
-                        setSceneFeedbackText("");
-                      }
-                    }}
-                    placeholder='e.g. "Make it more dramatic and intense", "Change to night time with rain", "Add fog and darker lighting"...'
-                    className="w-full px-3 py-2.5 rounded-lg text-xs bg-black/20 border border-white/10 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-blue-500/30 focus:ring-1 focus:ring-blue-500/20 resize-none min-h-[60px]"
-                    rows={2}
-                    autoFocus
-                  />
-                  <div className="flex justify-end gap-2 mt-2">
                     <Button
                       size="sm"
                       variant="ghost"
-                      onClick={() => { setSceneFeedbackId(null); setSceneFeedbackText(""); }}
-                      className="rounded-lg text-xs text-muted-foreground hover:text-foreground px-3"
+                      onClick={() => { setSceneChatId(null); setSceneChatMessages([]); setSceneChatInput(""); }}
+                      className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
                     >
-                      Cancel
+                      <X className="w-3.5 h-3.5" />
                     </Button>
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        if (sceneFeedbackText.trim()) {
-                          onRegenerateSceneWithFeedback(scene.id, sceneFeedbackText.trim());
-                          setSceneFeedbackId(null);
-                          setSceneFeedbackText("");
-                        }
-                      }}
-                      disabled={!sceneFeedbackText.trim() || regeneratingSceneId === scene.id}
-                      className="gradient-btn text-white border-0 rounded-lg text-xs px-4"
-                    >
-                      {regeneratingSceneId === scene.id ? (
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                      ) : (
-                        <><Send className="w-3 h-3 mr-1" />Regenerate All</>
-                      )}
-                    </Button>
+                  </div>
+
+                  <div className="max-h-[280px] overflow-y-auto px-4 py-3 space-y-2.5">
+                    {sceneChatMessages.length === 0 && (
+                      <div className="text-center py-4">
+                        <p className="text-[11px] text-muted-foreground">Tell me what you'd like to change about this scene's images.</p>
+                        <p className="text-[10px] text-muted-foreground/60 mt-1">I'll confirm my understanding before applying any changes.</p>
+                      </div>
+                    )}
+                    {sceneChatMessages.map((msg, mi) => (
+                      <div key={mi} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                        <div className={`max-w-[85%] px-3 py-2 rounded-xl text-xs leading-relaxed ${
+                          msg.role === "user"
+                            ? "bg-blue-500/20 text-blue-100 border border-blue-500/20"
+                            : "bg-white/5 text-white/80 border border-white/10"
+                        }`}>
+                          {msg.content}
+                        </div>
+                      </div>
+                    ))}
+                    {sceneChatLoading && (
+                      <div className="flex justify-start">
+                        <div className="px-3 py-2 rounded-xl bg-white/5 border border-white/10">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-400" />
+                        </div>
+                      </div>
+                    )}
+                    <div ref={chatEndRef} />
+                  </div>
+
+                  <div className="px-4 py-3 border-t border-blue-500/15 bg-black/10">
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={sceneChatInput}
+                        onChange={(e) => setSceneChatInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey && sceneChatInput.trim() && !sceneChatLoading) {
+                            e.preventDefault();
+                            sendChatMessage(scene.id);
+                          }
+                        }}
+                        placeholder="e.g. 'Make it darker with rain and fog, but keep the aircraft the same...'"
+                        className="flex-1 px-3 py-2 rounded-lg text-xs bg-black/20 border border-white/10 text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-blue-500/30 focus:ring-1 focus:ring-blue-500/20"
+                        disabled={sceneChatLoading || sceneChatApplying}
+                        autoFocus
+                      />
+                      <Button
+                        size="sm"
+                        onClick={() => sendChatMessage(scene.id)}
+                        disabled={!sceneChatInput.trim() || sceneChatLoading || sceneChatApplying}
+                        className="rounded-lg text-xs bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-400/20 px-3"
+                      >
+                        {sceneChatLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                      </Button>
+                    </div>
+                    {sceneChatMessages.some(m => m.role === "assistant") && (
+                      <div className="flex justify-end gap-2 mt-2.5">
+                        <Button
+                          size="sm"
+                          onClick={() => applyChatFeedback(scene.id)}
+                          disabled={sceneChatApplying || sceneChatLoading || !sceneChatMessages.some(m => m.role === "user")}
+                          className="gradient-btn text-white border-0 rounded-lg text-xs px-4"
+                        >
+                          {sceneChatApplying ? (
+                            <><Loader2 className="w-3 h-3 mr-1 animate-spin" />Applying to {sceneImages.length} images...</>
+                          ) : (
+                            <><Sparkles className="w-3 h-3 mr-1" />Apply Changes to All {sceneImages.length} Images</>
+                          )}
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

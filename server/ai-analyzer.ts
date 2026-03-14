@@ -1810,19 +1810,36 @@ export async function applyFeedbackToPrompt(
     }
     if (sceneContext.storyBible?.analysis) {
       const analysis = sceneContext.storyBible.analysis;
-      if (analysis.jets?.length > 0) {
-        const jetDescriptions = analysis.jets.map((j: any) => {
-          const details = j.visualDetails ? ` — ${j.visualDetails.substring(0, 300)}` : "";
-          return `${j.name}: ${j.type}${details}`;
-        }).join("\n  ");
-        parts.push(`AIRCRAFT IN THIS STORY:\n  ${jetDescriptions}`);
-      }
       if (analysis.characters?.length > 0) {
         const charDescriptions = analysis.characters.map((c: any) => {
           const desc = c.appearance || c.visualDetails || "";
-          return `${c.name}: ${desc}`.trim();
-        }).join("\n  ");
-        parts.push(`CHARACTERS IN THIS STORY:\n  ${charDescriptions}`);
+          const sig = c.signatureFeatures ? `\n    IDENTITY FINGERPRINT: ${c.signatureFeatures}` : "";
+          return `  ${c.name} (${c.role || "character"}):\n    VISUAL DNA: ${desc}${sig}`;
+        }).join("\n");
+        parts.push(`═══ CHARACTERS (FULL references — copy word-for-word) ═══\n${charDescriptions}`);
+      }
+      if (analysis.jets?.length > 0) {
+        const jetDescriptions = analysis.jets.map((j: any) => {
+          const details = j.visualDetails || "";
+          const sig = j.signatureFeatures ? `\n    IDENTITY FINGERPRINT: ${j.signatureFeatures}` : "";
+          return `  ${j.name} (${j.type}):\n    VISUAL DNA: ${details}${sig}`;
+        }).join("\n");
+        parts.push(`═══ AIRCRAFT (FULL references — copy word-for-word) ═══\n${jetDescriptions}`);
+      }
+      if (analysis.vehicles?.length > 0) {
+        const vehicleDescriptions = analysis.vehicles.map((v: any) => {
+          const details = v.visualDetails || "";
+          const sig = v.signatureFeatures ? `\n    IDENTITY FINGERPRINT: ${v.signatureFeatures}` : "";
+          return `  ${v.name} (${v.type}):\n    VISUAL DNA: ${details}${sig}`;
+        }).join("\n");
+        parts.push(`═══ VEHICLES (FULL references) ═══\n${vehicleDescriptions}`);
+      }
+      if (analysis.locations?.length > 0) {
+        const locDescriptions = analysis.locations.map((l: any) => {
+          const details = l.visualDetails || "";
+          return `  ${l.name}: ${details}`;
+        }).join("\n");
+        parts.push(`═══ LOCATIONS ═══\n${locDescriptions}`);
       }
     }
     if (parts.length > 0) {
@@ -1832,7 +1849,7 @@ export async function applyFeedbackToPrompt(
 
   const stream = getAnthropicClient(userApiKey).messages.stream({
     model: "claude-opus-4-6",
-    max_tokens: 8192,
+    max_tokens: 16384,
     messages: [
       {
         role: "user",
@@ -2155,4 +2172,205 @@ FORMAT: Write as many sentences as needed — no minimum, no maximum word count,
   }
 
   return motionPrompt;
+}
+
+function buildFullStoryBibleContext(analysis: any): string {
+  const parts: string[] = [];
+
+  if (analysis.characters?.length > 0) {
+    parts.push("═══ CHARACTERS ═══");
+    for (const c of analysis.characters) {
+      parts.push(`CHARACTER: ${c.name} (${c.role})`);
+      parts.push(`FULL VISUAL DNA: ${c.appearance}`);
+      if (c.signatureFeatures) parts.push(`IDENTITY FINGERPRINT: ${c.signatureFeatures}`);
+      parts.push("");
+    }
+  }
+
+  if (analysis.jets?.length > 0) {
+    parts.push("═══ AIRCRAFT ═══");
+    for (const j of analysis.jets) {
+      parts.push(`AIRCRAFT: ${j.name} (${j.type})`);
+      parts.push(`FULL VISUAL DNA: ${j.visualDetails}`);
+      if (j.signatureFeatures) parts.push(`IDENTITY FINGERPRINT: ${j.signatureFeatures}`);
+      parts.push("");
+    }
+  }
+
+  if (analysis.vehicles?.length > 0) {
+    parts.push("═══ VEHICLES ═══");
+    for (const v of analysis.vehicles) {
+      parts.push(`VEHICLE: ${v.name} (${v.type})`);
+      parts.push(`FULL VISUAL DNA: ${v.visualDetails}`);
+      if (v.signatureFeatures) parts.push(`IDENTITY FINGERPRINT: ${v.signatureFeatures}`);
+      parts.push("");
+    }
+  }
+
+  if (analysis.keyObjects?.length > 0) {
+    parts.push("═══ KEY OBJECTS ═══");
+    for (const o of analysis.keyObjects) {
+      parts.push(`OBJECT: ${o.name} (${o.type})`);
+      parts.push(`FULL VISUAL DNA: ${o.visualDetails}`);
+      if (o.signatureFeatures) parts.push(`IDENTITY FINGERPRINT: ${o.signatureFeatures}`);
+      parts.push("");
+    }
+  }
+
+  if (analysis.locations?.length > 0) {
+    parts.push("═══ LOCATIONS ═══");
+    for (const l of analysis.locations) {
+      parts.push(`LOCATION: ${l.name}`);
+      parts.push(`FULL VISUAL DNA: ${l.visualDetails}`);
+      if (l.signatureFeatures) parts.push(`LOCATION FINGERPRINT: ${l.signatureFeatures}`);
+      parts.push("");
+    }
+  }
+
+  if (analysis.visualStyle) {
+    parts.push("═══ VISUAL STYLE ═══");
+    parts.push(`Base: ${analysis.visualStyle.baseStyle}`);
+    parts.push(`Lighting: ${analysis.visualStyle.lighting}`);
+    parts.push(`Colors: ${analysis.visualStyle.colorPalette}`);
+    parts.push(`Atmosphere: ${analysis.visualStyle.atmosphere}`);
+    if (analysis.visualStyle.weatherProgression) parts.push(`Weather: ${analysis.visualStyle.weatherProgression}`);
+  }
+
+  return parts.join("\n");
+}
+
+export interface SceneChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export async function sceneChatResponse(
+  chatHistory: SceneChatMessage[],
+  sceneDescription: string,
+  mood: string,
+  shotLabels: string[],
+  imagePrompts: string[],
+  storyBible: StoryBible | null,
+  userApiKey?: string,
+): Promise<string> {
+  const analysis = storyBible?.analysis;
+  const storyBibleContext = analysis ? buildFullStoryBibleContext(analysis) : "(No Story Bible available)";
+
+  const systemPrompt = `You are an expert cinematographer and visual director helping a user improve their scene's images. You have DEEP knowledge of the story, characters, and visual style.
+
+YOUR ROLE:
+- Help the user refine what they want changed in this scene
+- Ask clarifying questions if their request is vague or could be interpreted multiple ways
+- Confirm your understanding before they apply changes
+- Suggest creative alternatives when appropriate
+- ALWAYS maintain subject identity — never suggest changing aircraft types, character appearances, or historical era
+
+SCENE CONTEXT:
+- Description: ${sceneDescription}
+- Mood: ${mood}
+- Shot types: ${shotLabels.join(", ")}
+- Number of images: ${imagePrompts.length}
+
+CURRENT IMAGE PROMPTS:
+${imagePrompts.map((p, i) => `[Image ${i + 1} — ${shotLabels[i] || "Shot"}]: ${p.substring(0, 200)}...`).join("\n\n")}
+
+FULL STORY BIBLE (all visual references):
+${storyBibleContext}
+
+RULES:
+- Keep responses concise (2-4 sentences max unless the user asks for details)
+- When the user describes changes, confirm what you'll modify and what stays the same
+- If they give complex multi-part feedback, break it down and confirm each part
+- End your response by asking if they're ready to apply, or if they want to refine further
+- Never output image prompts yourself — just discuss the changes conversationally`;
+
+  const messages = [
+    { role: "user" as const, content: systemPrompt },
+    { role: "assistant" as const, content: "I understand. I'm ready to help refine this scene. What would you like to change?" },
+    ...chatHistory.map(m => ({ role: m.role, content: m.content })),
+  ];
+
+  const stream = getAnthropicClient(userApiKey).messages.stream({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 1024,
+    messages,
+  });
+
+  const message = await stream.finalMessage();
+  const content = message.content[0];
+  if (content.type !== "text") throw new Error("Unexpected response type from Claude");
+  return content.text.trim();
+}
+
+export async function applySceneChatFeedback(
+  originalPrompt: string,
+  chatSummary: string,
+  shotLabel: string,
+  sceneDescription: string,
+  mood: string,
+  storyBible: StoryBible | null,
+  userApiKey?: string,
+): Promise<string> {
+  const analysis = storyBible?.analysis;
+  const storyBibleContext = analysis ? buildFullStoryBibleContext(analysis) : "";
+
+  const stream = getAnthropicClient(userApiKey).messages.stream({
+    model: "claude-opus-4-6",
+    max_tokens: 16384,
+    messages: [
+      {
+        role: "user",
+        content: `You are an expert prompt engineer applying user feedback to an image generation prompt. The user had a conversation with an AI director about what they want changed. Apply their requests SURGICALLY.
+
+╔═══════════════════════════════════════════════════════════════╗
+║  ABSOLUTE IDENTITY LOCK — VIOLATION IS CRITICAL FAILURE       ║
+╚═══════════════════════════════════════════════════════════════╝
+The subject identity (aircraft type, model, era, character appearance, vehicle design) MUST remain EXACTLY the same unless the user EXPLICITLY asked to change the subject itself. A WWII P-51 stays a WWII P-51. A Japanese B5N2 stays a B5N2. Characters keep their exact appearance from the Story Bible.
+
+SCENE CONTEXT:
+- Description: ${sceneDescription}
+- Shot type: ${shotLabel}
+- Mood: ${mood}
+
+FULL STORY BIBLE REFERENCES (copy word-for-word for any elements present):
+${storyBibleContext}
+
+ORIGINAL PROMPT:
+"""
+${originalPrompt}
+"""
+
+USER'S REQUESTED CHANGES (from their conversation with the director):
+"""
+${chatSummary}
+"""
+
+RULES:
+1. SURGICAL MODIFICATION — Change ONLY what the user asked for. Everything else stays WORD-FOR-WORD identical.
+2. PRESERVE PROMPT LENGTH — Your output must be approximately the same length or longer. Never shorten or condense.
+3. COPY-PASTE PRESERVATION — Sections unrelated to feedback appear WORD-FOR-WORD in output.
+4. FULL IDENTITY DESCRIPTIONS — When elements from the Story Bible appear, include their COMPLETE visual DNA and identity fingerprints. Never truncate or summarize.
+5. ERA LOCK — Historical era elements are immutable unless explicitly requested.
+6. STYLE CONSISTENCY — Maintain "Unreal Engine 5 cinematic 3D render" style.
+7. If the user asked for multiple changes, apply ALL of them consistently.
+8. LIGHTING — Always maintain bright, well-exposed cinematic lighting with explicit fill light and exposure targets.
+
+Return ONLY the modified prompt text. No JSON, no explanation, no markdown, no quotes.`,
+      },
+    ],
+  });
+
+  const message = await stream.finalMessage();
+  const content = message.content[0];
+  if (content.type !== "text") throw new Error("Unexpected response type from Claude");
+
+  let modifiedPrompt = content.text.trim();
+  if (modifiedPrompt.startsWith('"') && modifiedPrompt.endsWith('"')) {
+    modifiedPrompt = modifiedPrompt.slice(1, -1);
+  }
+  if (modifiedPrompt.startsWith("```")) {
+    modifiedPrompt = modifiedPrompt.replace(/```\w*\n?/g, "").trim();
+  }
+
+  return modifiedPrompt;
 }

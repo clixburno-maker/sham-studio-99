@@ -49,10 +49,18 @@ Once a project exists, the system analyzes the script using Claude Opus 4.6, bui
 
 ## Image Regeneration with Feedback
 - **Subject identity lock**: `applyFeedbackToPrompt()` uses strict rules to preserve the original subject identity (aircraft type, era, vehicle, character) when applying feedback
-- **Scene context**: Feedback regeneration receives scene description, mood, shot label, and Story Bible (aircraft/character descriptions) to maintain continuity. Uses `visualDetails` field (not visualDescription) for jets and characters per Story Bible schema
+- **Full Story Bible context**: Scene context now includes FULL `visualDetails` and `signatureFeatures` for all characters, jets, vehicles, and locations — no truncation. Previously truncated to 300 chars causing subject identity loss.
 - **Story Bible fallback**: `getStoryBible()` helper function first checks in-memory cache, then falls back to persisted `project.analysis` from database — survives server restarts
 - **Minimal diff principle**: AI makes only the requested change, keeping the rest of the prompt word-for-word identical
 - **Era protection**: Historical era elements (WWII, Cold War, etc.) are locked and cannot be accidentally changed
+
+## Scene Director Chat
+- **Conversational feedback**: Replaces old single-textarea scene feedback with a chat interface where users describe desired changes and the AI director confirms understanding before applying
+- **Backend**: `sceneChatResponse()` (Claude Sonnet) for conversational replies; `applySceneChatFeedback()` (Claude Opus) for surgical prompt modification with full identity lock
+- **Context**: `buildFullStoryBibleContext()` provides complete Story Bible without truncation to both chat and apply functions
+- **Frontend**: Chat panel in StoryboardView with message bubbles, typing indicator, send button, and "Apply Changes to All N Images" button
+- **API endpoints**: `POST /api/projects/:id/scenes/:sceneId/scene-chat` (chat), `POST /api/projects/:id/scenes/:sceneId/apply-scene-chat` (apply with regeneration)
+- **Ownership checks**: Both endpoints verify `scene.projectId === project.id` to prevent cross-project access
 
 ## Character Reference System
 - **Multi-angle portraits**: Each character gets 3 portraits (front view, three-quarter view, side profile)

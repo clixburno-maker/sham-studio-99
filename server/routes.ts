@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { analyzeFullStory, generateSequencePrompts, analyzeAndImprovePrompt, applyFeedbackToPrompt, generateSmartMotionPrompt, generateMotionPromptWithFeedback, type VisualScene, type StoryBible, splitIntoSentences, buildFullStoryParams, parseFullStoryResult, buildStoryBibleParams, parseStoryBibleResult, buildVisualScenesChunkParams, parseVisualScenesChunkResult, validateAndFillSentenceCoverage, buildSequencePromptParams, parseSequencePromptResult } from "./ai-analyzer";
+import { analyzeFullStory, generateSequencePrompts, analyzeAndImprovePrompt, applyFeedbackToPrompt, generateSmartMotionPrompt, generateMotionPromptWithFeedback, type VisualScene, type StoryBible, splitIntoSentences, buildFullStoryParams, parseFullStoryResult, buildStoryBibleParams, parseStoryBibleResult, buildVisualScenesChunkParams, parseVisualScenesChunkResult, validateAndFillSentenceCoverage, buildSequencePromptParams, parseSequencePromptResult, sceneChatResponse, applySceneChatFeedback, type SceneChatMessage } from "./ai-analyzer";
 import { submitBatch, pollBatchUntilDone, formatElapsed, type BatchRequest } from "./anthropic-batch";
 import { generateImage, checkImageStatus, generateVideo, checkVideoStatus, VIDEO_MODELS, getVideoModelConfig, IMAGE_MODELS, getImageModelConfig, type VideoModelId, type ImageModelId } from "./nanobanana";
 import { insertProjectSchema, insertNicheSchema, type ScriptAnalysis } from "@shared/schema";
@@ -2113,6 +2113,118 @@ Write the script now. Output ONLY the script text, nothing else.`,
       })();
     } catch (err: any) {
       console.error("Scene feedback regeneration error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/projects/:id/scenes/:sceneId/scene-chat", async (req, res) => {
+    try {
+      const userKeys = extractUserKeys(req);
+      const project = await storage.getProject(req.params.id);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      const scene = await storage.getScene(req.params.sceneId);
+      if (!scene) return res.status(404).json({ error: "Scene not found" });
+      if (scene.projectId !== project.id) return res.status(404).json({ error: "Scene not found in this project" });
+
+      const { messages } = req.body || {};
+      if (!messages || !Array.isArray(messages) || messages.length === 0) {
+        return res.status(400).json({ error: "Messages array is required" });
+      }
+
+      const storyBible = await getStoryBible(project.id);
+      const shotLabels: string[] = (() => { try { return scene.shotLabels ? JSON.parse(scene.shotLabels) : []; } catch { return []; } })();
+      const sceneImages = (await storage.getImagesByProject(project.id)).filter(img => img.sceneId === scene.id);
+      const imagePrompts = sceneImages.sort((a, b) => a.variant - b.variant).map(img => img.prompt);
+
+      const reply = await sceneChatResponse(
+        messages as SceneChatMessage[],
+        scene.sceneDescription || "",
+        scene.mood || "cinematic",
+        shotLabels,
+        imagePrompts,
+        storyBible,
+        userKeys.anthropic,
+      );
+
+      res.json({ reply });
+    } catch (err: any) {
+      console.error("Scene chat error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/projects/:id/scenes/:sceneId/apply-scene-chat", async (req, res) => {
+    try {
+      const userKeys = extractUserKeys(req);
+      const project = await storage.getProject(req.params.id);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      const scene = await storage.getScene(req.params.sceneId);
+      if (!scene) return res.status(404).json({ error: "Scene not found" });
+      if (scene.projectId !== project.id) return res.status(404).json({ error: "Scene not found in this project" });
+
+      const { messages, imageModel } = req.body || {};
+      if (!messages || !Array.isArray(messages) || messages.length === 0) {
+        return res.status(400).json({ error: "Chat messages are required" });
+      }
+
+      const imgModel = (imageModel as ImageModelId) || undefined;
+      const sceneImages = (await storage.getImagesByProject(project.id)).filter(img => img.sceneId === scene.id);
+      if (sceneImages.length === 0) return res.status(400).json({ error: "No images in this scene" });
+
+      const userMessages = messages.filter((m: any) => m.role === "user").map((m: any) => m.content);
+      const chatSummary = userMessages.join("\n\nAdditionally: ");
+
+      for (const img of sceneImages) {
+        await storage.updateImage(img.id, { status: "generating", imageUrl: null });
+      }
+
+      res.json({ status: "regenerating", total: sceneImages.length, message: "Applying your feedback to all images..." });
+
+      const storyBible = await getStoryBible(project.id);
+      const shotLabels: string[] = (() => { try { return scene.shotLabels ? JSON.parse(scene.shotLabels) : []; } catch { return []; } })();
+
+      (async () => {
+        for (const img of sceneImages) {
+          try {
+            const shotLabel = shotLabels[img.variant - 1] || "Cinematic Shot";
+            const improvedPrompt = await applySceneChatFeedback(
+              img.prompt,
+              chatSummary,
+              shotLabel,
+              scene.sceneDescription || "",
+              scene.mood || "cinematic",
+              storyBible,
+              userKeys.anthropic,
+            );
+            console.log(`Scene chat apply: Improved prompt for image ${img.id} (${improvedPrompt.length} chars)`);
+
+            const charRefUrls = await getCharacterReferenceUrlsForScene(project.id, scene);
+            const modelConfig = getImageModelConfig(imgModel);
+            const { taskId } = await generateImage(improvedPrompt, charRefUrls.length > 0 ? charRefUrls : undefined, imgModel, userKeys.evolink);
+            await storage.updateImage(img.id, {
+              status: "generating",
+              taskId,
+              prompt: improvedPrompt,
+            });
+            storage.addProjectCost(project.id, "imageGenerationCost", modelConfig.costPerImage).catch(() => {});
+          } catch (err: any) {
+            console.error(`Scene chat apply failed for image ${img.id}:`, err.message);
+            try {
+              const fallbackConfig = getImageModelConfig(imgModel);
+              const { taskId } = await generateImage(img.prompt, undefined, imgModel, userKeys.evolink);
+              await storage.updateImage(img.id, { status: "generating", taskId });
+              storage.addProjectCost(project.id, "imageGenerationCost", fallbackConfig.costPerImage).catch(() => {});
+            } catch (fallbackErr: any) {
+              console.error(`Scene chat apply fallback failed for image ${img.id}:`, fallbackErr.message);
+              await storage.updateImage(img.id, { status: "failed" });
+            }
+          }
+        }
+      })();
+    } catch (err: any) {
+      console.error("Scene chat apply error:", err);
       res.status(500).json({ error: err.message });
     }
   });
