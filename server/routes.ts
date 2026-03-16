@@ -8,7 +8,6 @@ import { insertProjectSchema, insertNicheSchema, type ScriptAnalysis } from "@sh
 import { extractChannelTranscripts, extractSelectedVideoTranscripts, getChannelVideos } from "./youtube";
 import { streamExportPDF } from "./pdf-export";
 import archiver from "archiver";
-import { Readable } from "stream";
 import Anthropic from "@anthropic-ai/sdk";
 import { generateVoiceover, getVoices } from "./elevenlabs";
 import * as fs from "fs";
@@ -3430,6 +3429,8 @@ Write the script now. Output ONLY the script text, nothing else.`,
       res.setHeader("Content-Disposition", `attachment; filename="${zipFilename}"`);
 
       const archive = archiver("zip", { zlib: { level: 1 } });
+      let clientDisconnected = false;
+      req.on("close", () => { clientDisconnected = true; });
       archive.on("error", (err) => {
         console.error("Archive error:", err);
         if (!res.headersSent) {
@@ -3438,27 +3439,53 @@ Write the script now. Output ONLY the script text, nothing else.`,
       });
       archive.pipe(res);
 
-      for (const item of downloadItems) {
-        try {
-          const upstream = await fetch(item.url, {
-            headers: { "User-Agent": "ScriptVision/1.0" },
-          });
-          if (!upstream.ok || !upstream.body) continue;
+      const isVideo = (fn: string) => /\.(mp4|webm|mov)$/i.test(fn);
+      const CONCURRENCY = 4;
+      let succeeded = 0;
+      let failed = 0;
 
-          const chunks: Uint8Array[] = [];
-          const reader = upstream.body.getReader();
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            chunks.push(value);
+      for (let i = 0; i < downloadItems.length; i += CONCURRENCY) {
+        if (clientDisconnected) {
+          console.log(`[download] Client disconnected, aborting after ${succeeded} files`);
+          break;
+        }
+        const batch = downloadItems.slice(i, i + CONCURRENCY);
+        const results = await Promise.allSettled(
+          batch.map(async (item) => {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 60000);
+            try {
+              const upstream = await fetch(item.url, {
+                headers: { "User-Agent": "ScriptVision/1.0" },
+                signal: controller.signal,
+              });
+              if (!upstream.ok) {
+                throw new Error(`HTTP ${upstream.status}`);
+              }
+              const arrayBuf = await upstream.arrayBuffer();
+              return { filename: item.filename, buffer: Buffer.from(arrayBuf) };
+            } finally {
+              clearTimeout(timeout);
+            }
+          })
+        );
+
+        for (const result of results) {
+          if (result.status === "fulfilled" && result.value) {
+            archive.append(result.value.buffer, {
+              name: result.value.filename,
+              store: isVideo(result.value.filename),
+            });
+            succeeded++;
+          } else {
+            failed++;
+            const reason = result.status === "rejected" ? result.reason?.message : "unknown";
+            console.warn(`[download] Failed to fetch file: ${reason}`);
           }
-          const buffer = Buffer.concat(chunks);
-          archive.append(buffer, { name: item.filename });
-        } catch (fetchErr: any) {
-          console.warn(`[download] Failed to fetch ${item.filename}: ${fetchErr.message}`);
         }
       }
 
+      console.log(`[download] Archive complete: ${succeeded} succeeded, ${failed} failed out of ${downloadItems.length} items`);
       await archive.finalize();
     } catch (err: any) {
       console.error("Download error:", err);
@@ -3592,8 +3619,6 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
       scenes.sort((a, b) => a.sentenceIndex - b.sentenceIndex);
 
-      const sceneMap = new Map(scenes.map((s) => [s.id, s]));
-
       const completedClips = images.filter(
         (img) => img.videoUrl && img.videoStatus === "completed"
       );
@@ -3626,12 +3651,15 @@ Write the script now. Output ONLY the script text, nothing else.`,
       );
 
       const archive = archiver("zip", { store: true });
+      let clientDisconnected = false;
+      req.on("close", () => { clientDisconnected = true; });
       archive.on("error", (err) => {
         console.error("Archive error:", err);
         if (!res.headersSent) res.status(500).json({ error: "Archive failed" });
       });
       archive.pipe(res);
 
+      const downloadItems: { url: string; filePath: string }[] = [];
       let sceneNum = 0;
       for (const scene of scenes) {
         const sceneClips = clipsByScene.get(scene.id);
@@ -3661,31 +3689,61 @@ Write the script now. Output ONLY the script text, nothing else.`,
           let shotLabel = shotLabels[clip.variant] || `Shot_${clip.variant + 1}`;
           shotLabel = sanitize(shotLabel);
           const fileName = `${clipNum}_${shotLabel}.mp4`;
-          const filePath = `${projectName}_Clips/${folderName}/${fileName}`;
+          downloadItems.push({
+            url: clip.videoUrl!,
+            filePath: `${projectName}_Clips/${folderName}/${fileName}`,
+          });
+        }
+      }
 
-          try {
-            const upstream = await fetch(clip.videoUrl!, {
-              headers: { "User-Agent": "ScriptVision/1.0" },
-            });
-            if (!upstream.ok) {
-              console.warn(`Failed to fetch clip ${clip.id}: ${upstream.status}`);
-              continue;
-            }
-            const webStream = upstream.body;
-            if (webStream) {
-              const nodeStream = Readable.fromWeb(webStream as any);
-              archive.append(nodeStream, { name: filePath });
-              await new Promise<void>((resolve, reject) => {
-                nodeStream.on("end", resolve);
-                nodeStream.on("error", reject);
+      if (downloadItems.length === 0) {
+        await archive.finalize();
+        return;
+      }
+
+      const CONCURRENCY = 4;
+      let succeeded = 0;
+      let failed = 0;
+
+      for (let i = 0; i < downloadItems.length; i += CONCURRENCY) {
+        if (clientDisconnected) {
+          console.log(`[download-clips] Client disconnected, aborting after ${succeeded} clips`);
+          break;
+        }
+        const batch = downloadItems.slice(i, i + CONCURRENCY);
+        const results = await Promise.allSettled(
+          batch.map(async (item) => {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 60000);
+            try {
+              const upstream = await fetch(item.url, {
+                headers: { "User-Agent": "ScriptVision/1.0" },
+                signal: controller.signal,
               });
+              if (!upstream.ok) {
+                throw new Error(`HTTP ${upstream.status}`);
+              }
+              const arrayBuf = await upstream.arrayBuffer();
+              return { filePath: item.filePath, buffer: Buffer.from(arrayBuf) };
+            } finally {
+              clearTimeout(timeout);
             }
-          } catch (fetchErr: any) {
-            console.warn(`Error fetching clip ${clip.id}:`, fetchErr.message);
+          })
+        );
+
+        for (const result of results) {
+          if (result.status === "fulfilled" && result.value) {
+            archive.append(result.value.buffer, { name: result.value.filePath });
+            succeeded++;
+          } else {
+            failed++;
+            const reason = result.status === "rejected" ? result.reason?.message : "unknown";
+            console.warn(`[download-clips] Failed to fetch clip: ${reason}`);
           }
         }
       }
 
+      console.log(`[download-clips] Archive complete: ${succeeded} succeeded, ${failed} failed out of ${downloadItems.length} clips`);
       await archive.finalize();
     } catch (err: any) {
       console.error("Download clips error:", err);
