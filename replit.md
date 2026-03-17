@@ -7,6 +7,13 @@ A video production tool for generating cinematic visuals from aviation/military 
 
 Once a project exists, the system analyzes the script using Claude Opus 4.6, builds a "Story Bible" with detailed element descriptions, generates photorealistic 4K images via EvoLink API, and converts them to video clips. Premium glassmorphism UI design throughout.
 
+## Story Bible PDF Export
+- **Endpoint**: `POST /api/projects/:id/export-story-bible` — generates a comprehensive Story Bible PDF
+- **Contents**: Cover page, Characters section (with portrait images from character references), Aircraft/Vehicles/Key Objects (with full visual details), Locations, Visual Style Guide (lighting, color palette, atmosphere, weather progression), and all Scenes (with descriptions + generated images in 2-column grid)
+- **Images**: All character portraits and scene images are prefetched, optimized via sharp, and embedded in the PDF
+- **UI**: "Download Story Bible PDF" option in the Download/Export dropdown menu (available once project analysis is complete, even before images are generated)
+- **Design**: Dark-themed PDF matching the app's aesthetic (dark background, accent color headers, section dividers)
+
 ## Background Processing
 - Analysis progress is persisted to database (`analysisProgress` column on projects table) — survives browser close, page navigation, and server restarts
 - Project status transitions: draft → analyzing → analyzed → generating → completed

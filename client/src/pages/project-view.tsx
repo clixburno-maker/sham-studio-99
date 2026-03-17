@@ -166,6 +166,7 @@ export default function ProjectView() {
   const [animatingSceneId, setAnimatingSceneId] = useState<string | null>(null);
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isExportingBible, setIsExportingBible] = useState(false);
   const [isSmartRegenerating, setIsSmartRegenerating] = useState(false);
   const [showSmartRegenPicker, setShowSmartRegenPicker] = useState(false);
   const [smartRegenSelectedScenes, setSmartRegenSelectedScenes] = useState<Set<string>>(new Set());
@@ -673,6 +674,38 @@ export default function ProjectView() {
     }
   }, [id, toast]);
 
+  const handleExportStoryBible = useCallback(async () => {
+    if (!id) return;
+    setIsExportingBible(true);
+    try {
+      const res = await fetch(`/api/projects/${id}/export-story-bible`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getApiHeaders() },
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: "Export failed" }));
+        throw new Error(errData.error || "Export failed");
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const disposition = res.headers.get("Content-Disposition");
+      const filenameMatch = disposition?.match(/filename="(.+)"/);
+      a.download = filenameMatch ? filenameMatch[1] : "story_bible.pdf";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      toast({ title: "Story Bible exported", description: "Your complete Story Bible PDF has been downloaded." });
+    } catch (err: any) {
+      toast({ title: "Export failed", description: err.message, variant: "destructive" });
+    } finally {
+      setIsExportingBible(false);
+    }
+  }, [id, toast]);
+
   const analysis = project?.analysis as ScriptAnalysis | null;
   const hasCharacters = (analysis?.characters?.length ?? 0) > 0;
   const expectedCharRefs = hasCharacters ? analysis!.characters.length * 3 : 0;
@@ -883,7 +916,7 @@ export default function ProjectView() {
                     <Loader2 className="w-4 h-4 animate-spin" />Generating Videos...
                   </button>
                 )}
-                {completedImages > 0 && (
+                {(completedImages > 0 || project.analysis) && (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/20 transition-all duration-300 active:scale-[0.97]">
@@ -891,13 +924,28 @@ export default function ProjectView() {
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-64 glass-surface border border-white/10">
-                      <DropdownMenuItem
-                        onClick={() => setShowExportDialog(true)}
-                        className="cursor-pointer"
-                      >
-                        <FileDown className="w-4 h-4 mr-2" />
-                        Export PDF Storyboard
-                      </DropdownMenuItem>
+                      {project.analysis && (
+                        <DropdownMenuItem
+                          onClick={handleExportStoryBible}
+                          disabled={isExportingBible}
+                          className="cursor-pointer"
+                        >
+                          {isExportingBible ? (
+                            <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Exporting Story Bible...</>
+                          ) : (
+                            <><BookOpen className="w-4 h-4 mr-2" />Download Story Bible PDF</>
+                          )}
+                        </DropdownMenuItem>
+                      )}
+                      {completedImages > 0 && (
+                        <DropdownMenuItem
+                          onClick={() => setShowExportDialog(true)}
+                          className="cursor-pointer"
+                        >
+                          <FileDown className="w-4 h-4 mr-2" />
+                          Export PDF Storyboard
+                        </DropdownMenuItem>
+                      )}
                       {completedImages > 0 && (
                         <DropdownMenuItem
                           onClick={() => window.open(`/api/projects/${id}/download?type=images`, "_blank")}

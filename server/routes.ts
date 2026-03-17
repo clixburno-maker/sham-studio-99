@@ -6,7 +6,7 @@ import { submitBatch, pollBatchUntilDone, formatElapsed, type BatchRequest } fro
 import { generateImage, checkImageStatus, generateVideo, checkVideoStatus, VIDEO_MODELS, getVideoModelConfig, IMAGE_MODELS, getImageModelConfig, type VideoModelId, type ImageModelId } from "./nanobanana";
 import { insertProjectSchema, insertNicheSchema, type ScriptAnalysis } from "@shared/schema";
 import { extractChannelTranscripts, extractSelectedVideoTranscripts, getChannelVideos } from "./youtube";
-import { streamExportPDF } from "./pdf-export";
+import { streamExportPDF, streamStoryBiblePDF } from "./pdf-export";
 import archiver from "archiver";
 import Anthropic from "@anthropic-ai/sdk";
 import { generateVoiceover, getVoices } from "./elevenlabs";
@@ -3377,6 +3377,34 @@ Write the script now. Output ONLY the script text, nothing else.`,
     } catch (err: any) {
       console.error("Export PDF error:", err);
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/projects/:id/export-story-bible", async (req, res) => {
+    try {
+      const project = await storage.getProject(req.params.id);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (!project.analysis) return res.status(400).json({ error: "Project has not been analyzed yet" });
+
+      const projectScenes = await storage.getScenesByProject(project.id);
+      const projectImages = await storage.getImagesByProject(project.id);
+      const charRefs = await storage.getCharacterReferencesByProject(project.id);
+
+      console.log(`Export Story Bible: project ${project.id}, scenes=${projectScenes.length}, images=${projectImages.length}, charRefs=${charRefs.length}`);
+
+      await streamStoryBiblePDF(
+        res,
+        project,
+        { analysis: project.analysis as any },
+        charRefs as any,
+        projectScenes,
+        projectImages,
+      );
+    } catch (err: any) {
+      console.error("Export Story Bible error:", err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: err.message });
+      }
     }
   });
 
