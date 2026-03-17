@@ -3441,8 +3441,27 @@ Write the script now. Output ONLY the script text, nothing else.`,
 
       const isVideo = (fn: string) => /\.(mp4|webm|mov)$/i.test(fn);
       const CONCURRENCY = 4;
+      const MAX_RETRIES = 2;
       let succeeded = 0;
-      let failed = 0;
+      const failedItems: { filename: string; reason: string }[] = [];
+
+      const fetchFile = async (item: { url: string; filename: string }) => {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 60000);
+        try {
+          const upstream = await fetch(item.url, {
+            headers: { "User-Agent": "ScriptVision/1.0" },
+            signal: controller.signal,
+          });
+          if (!upstream.ok) {
+            throw new Error(`HTTP ${upstream.status}`);
+          }
+          const arrayBuf = await upstream.arrayBuffer();
+          return { filename: item.filename, buffer: Buffer.from(arrayBuf) };
+        } finally {
+          clearTimeout(timeout);
+        }
+      };
 
       for (let i = 0; i < downloadItems.length; i += CONCURRENCY) {
         if (clientDisconnected) {
@@ -3450,27 +3469,11 @@ Write the script now. Output ONLY the script text, nothing else.`,
           break;
         }
         const batch = downloadItems.slice(i, i + CONCURRENCY);
-        const results = await Promise.allSettled(
-          batch.map(async (item) => {
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 60000);
-            try {
-              const upstream = await fetch(item.url, {
-                headers: { "User-Agent": "ScriptVision/1.0" },
-                signal: controller.signal,
-              });
-              if (!upstream.ok) {
-                throw new Error(`HTTP ${upstream.status}`);
-              }
-              const arrayBuf = await upstream.arrayBuffer();
-              return { filename: item.filename, buffer: Buffer.from(arrayBuf) };
-            } finally {
-              clearTimeout(timeout);
-            }
-          })
-        );
+        const results = await Promise.allSettled(batch.map(fetchFile));
 
-        for (const result of results) {
+        const retryQueue: typeof downloadItems = [];
+        for (let j = 0; j < results.length; j++) {
+          const result = results[j];
           if (result.status === "fulfilled" && result.value) {
             archive.append(result.value.buffer, {
               name: result.value.filename,
@@ -3478,14 +3481,47 @@ Write the script now. Output ONLY the script text, nothing else.`,
             });
             succeeded++;
           } else {
-            failed++;
-            const reason = result.status === "rejected" ? result.reason?.message : "unknown";
-            console.warn(`[download] Failed to fetch file: ${reason}`);
+            retryQueue.push(batch[j]);
+          }
+        }
+
+        for (const retryItem of retryQueue) {
+          let retrySuccess = false;
+          for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            if (clientDisconnected) break;
+            await new Promise((r) => setTimeout(r, 1000 * attempt));
+            try {
+              const result = await fetchFile(retryItem);
+              archive.append(result.buffer, {
+                name: result.filename,
+                store: isVideo(result.filename),
+              });
+              succeeded++;
+              retrySuccess = true;
+              break;
+            } catch {}
+          }
+          if (!retrySuccess) {
+            failedItems.push({ filename: retryItem.filename, reason: "Failed after retries" });
           }
         }
       }
 
-      console.log(`[download] Archive complete: ${succeeded} succeeded, ${failed} failed out of ${downloadItems.length} items`);
+      if (failedItems.length > 0) {
+        const manifest = [
+          `Download Summary`,
+          `================`,
+          `Total files: ${downloadItems.length}`,
+          `Successfully downloaded: ${succeeded}`,
+          `Failed: ${failedItems.length}`,
+          ``,
+          `Missing files:`,
+          ...failedItems.map((f) => `  - ${f.filename} (${f.reason})`),
+        ].join("\n");
+        archive.append(Buffer.from(manifest, "utf-8"), { name: "_MISSING_FILES.txt" });
+      }
+
+      console.log(`[download] Archive complete: ${succeeded} succeeded, ${failedItems.length} failed out of ${downloadItems.length} items`);
       await archive.finalize();
     } catch (err: any) {
       console.error("Download error:", err);
@@ -3702,8 +3738,27 @@ Write the script now. Output ONLY the script text, nothing else.`,
       }
 
       const CONCURRENCY = 4;
+      const MAX_RETRIES = 2;
       let succeeded = 0;
-      let failed = 0;
+      const failedItems: { filePath: string; reason: string }[] = [];
+
+      const fetchClip = async (item: { url: string; filePath: string }) => {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 60000);
+        try {
+          const upstream = await fetch(item.url, {
+            headers: { "User-Agent": "ScriptVision/1.0" },
+            signal: controller.signal,
+          });
+          if (!upstream.ok) {
+            throw new Error(`HTTP ${upstream.status}`);
+          }
+          const arrayBuf = await upstream.arrayBuffer();
+          return { filePath: item.filePath, buffer: Buffer.from(arrayBuf) };
+        } finally {
+          clearTimeout(timeout);
+        }
+      };
 
       for (let i = 0; i < downloadItems.length; i += CONCURRENCY) {
         if (clientDisconnected) {
@@ -3711,39 +3766,61 @@ Write the script now. Output ONLY the script text, nothing else.`,
           break;
         }
         const batch = downloadItems.slice(i, i + CONCURRENCY);
-        const results = await Promise.allSettled(
-          batch.map(async (item) => {
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 60000);
-            try {
-              const upstream = await fetch(item.url, {
-                headers: { "User-Agent": "ScriptVision/1.0" },
-                signal: controller.signal,
-              });
-              if (!upstream.ok) {
-                throw new Error(`HTTP ${upstream.status}`);
-              }
-              const arrayBuf = await upstream.arrayBuffer();
-              return { filePath: item.filePath, buffer: Buffer.from(arrayBuf) };
-            } finally {
-              clearTimeout(timeout);
-            }
-          })
-        );
+        const results = await Promise.allSettled(batch.map(fetchClip));
 
-        for (const result of results) {
+        const retryQueue: typeof downloadItems = [];
+        for (let j = 0; j < results.length; j++) {
+          const result = results[j];
           if (result.status === "fulfilled" && result.value) {
             archive.append(result.value.buffer, { name: result.value.filePath });
             succeeded++;
           } else {
-            failed++;
-            const reason = result.status === "rejected" ? result.reason?.message : "unknown";
-            console.warn(`[download-clips] Failed to fetch clip: ${reason}`);
+            retryQueue.push(batch[j]);
+          }
+        }
+
+        for (const retryItem of retryQueue) {
+          let retrySuccess = false;
+          for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            if (clientDisconnected) break;
+            await new Promise((r) => setTimeout(r, 1000 * attempt));
+            try {
+              const result = await fetchClip(retryItem);
+              archive.append(result.buffer, { name: result.filePath });
+              succeeded++;
+              retrySuccess = true;
+              console.log(`[download-clips] Retry ${attempt} succeeded for ${retryItem.filePath}`);
+              break;
+            } catch (err: any) {
+              console.warn(`[download-clips] Retry ${attempt} failed for ${retryItem.filePath}: ${err.message}`);
+            }
+          }
+          if (!retrySuccess) {
+            failedItems.push({
+              filePath: retryItem.filePath,
+              reason: "Failed after retries",
+            });
           }
         }
       }
 
-      console.log(`[download-clips] Archive complete: ${succeeded} succeeded, ${failed} failed out of ${downloadItems.length} clips`);
+      if (failedItems.length > 0) {
+        const manifest = [
+          `Download Summary`,
+          `================`,
+          `Total clips: ${downloadItems.length}`,
+          `Successfully downloaded: ${succeeded}`,
+          `Failed: ${failedItems.length}`,
+          ``,
+          `Missing clips:`,
+          ...failedItems.map((f) => `  - ${f.filePath} (${f.reason})`),
+        ].join("\n");
+        archive.append(Buffer.from(manifest, "utf-8"), {
+          name: `${projectName}_Clips/_MISSING_CLIPS.txt`,
+        });
+      }
+
+      console.log(`[download-clips] Archive complete: ${succeeded} succeeded, ${failedItems.length} failed out of ${downloadItems.length} clips`);
       await archive.finalize();
     } catch (err: any) {
       console.error("Download clips error:", err);
