@@ -117,7 +117,7 @@ export default function ProjectView() {
 
   const { data: project, isLoading: projectLoading } = useQuery<Project>({
     queryKey: ["/api/projects", id],
-    refetchInterval: isAnalyzing ? 4000 : false,
+    refetchInterval: isAnalyzing || isGenerating ? 4000 : false,
   });
 
   const { data: scenes, isLoading: scenesLoading } = useQuery<Scene[]>({
@@ -129,6 +129,12 @@ export default function ProjectView() {
   const { data: images, isLoading: imagesLoading, refetch: refetchImages } = useQuery<GeneratedImage[]>({
     queryKey: ["/api/projects", id, "images"],
     enabled: !!project,
+    refetchInterval: (query) => {
+      if (project?.status === "generating") return 5000;
+      const imgs = query.state.data;
+      if (imgs?.some((img) => img.status === "pending" || img.status === "generating")) return 5000;
+      return false;
+    },
   });
 
   const { data: charRefsData } = useQuery<any[]>({
@@ -286,7 +292,7 @@ export default function ProjectView() {
             }
             setTimeout(() => setGenProgress(null), 10000);
           }
-        } else if (!hasGeneratingImages) {
+        } else if (!hasGeneratingImages && !imagesLoading && project?.status !== "generating") {
           setIsGenerating(false);
           setGenProgress(null);
           setGenStartTime(null);
@@ -296,7 +302,7 @@ export default function ProjectView() {
     fetchProgress();
     const interval = setInterval(fetchProgress, 3000);
     return () => clearInterval(interval);
-  }, [isGenerating, id]);
+  }, [isGenerating, id, hasGeneratingImages, imagesLoading, project?.status]);
 
   useEffect(() => {
     if (!isGenerating || !genStartTime) return;

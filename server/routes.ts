@@ -1914,7 +1914,9 @@ Write the script now. Output ONLY the script text, nothing else.`,
         const completed = images.filter(img => img.status === "completed").length;
         const failed = images.filter(img => img.status === "failed").length;
         const generating = images.filter(img => img.status === "generating").length;
-        if (generating > 0) {
+        const pending = images.filter(img => img.status === "pending").length;
+        const inProgress = generating + pending;
+        if (inProgress > 0) {
           return res.json({
             status: "polling",
             totalImages: images.length,
@@ -1923,7 +1925,7 @@ Write the script now. Output ONLY the script text, nothing else.`,
             failed,
             currentBatch: 0,
             totalBatches: 0,
-            detail: `${completed} completed, ${generating} still rendering, ${failed} failed.`,
+            detail: `${completed} completed, ${inProgress} still rendering, ${failed} failed.`,
             startedAt: 0,
           });
         }
