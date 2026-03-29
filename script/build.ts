@@ -30,6 +30,9 @@ const allowlist = [
   "xlsx",
   "zod",
   "zod-validation-error",
+  "p-limit",
+  "p-retry",
+  "yocto-queue",
 ];
 
 async function buildAll() {
