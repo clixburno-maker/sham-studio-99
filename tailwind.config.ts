@@ -1,7 +1,6 @@
 import type { Config } from "tailwindcss";
 
 export default {
-  darkMode: ["class"],
   content: ["./client/index.html", "./client/src/**/*.{js,jsx,ts,tsx}"],
   theme: {
     extend: {
@@ -86,11 +85,6 @@ export default {
         serif: ["var(--font-serif)"],
         mono: ["var(--font-mono)"],
       },
-      backdropBlur: {
-        xs: "2px",
-        "2xl": "40px",
-        "3xl": "64px",
-      },
       keyframes: {
         "accordion-down": {
           from: { height: "0" },
@@ -99,28 +93,6 @@ export default {
         "accordion-up": {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" },
-        },
-        "subtle-glow": {
-          "0%, 100%": { opacity: "0.4" },
-          "50%": { opacity: "1" },
-        },
-        "border-shimmer": {
-          "0%": { backgroundPosition: "0% 50%" },
-          "50%": { backgroundPosition: "100% 50%" },
-          "100%": { backgroundPosition: "0% 50%" },
-        },
-        "float": {
-          "0%, 100%": { transform: "translateY(0px)" },
-          "50%": { transform: "translateY(-5px)" },
-        },
-        "pulse-glow": {
-          "0%, 100%": { boxShadow: "0 0 16px -3px hsl(217 92% 58% / 0.2)" },
-          "50%": { boxShadow: "0 0 32px -3px hsl(217 92% 58% / 0.4)" },
-        },
-        "gradient-shift": {
-          "0%": { backgroundPosition: "0% 50%" },
-          "50%": { backgroundPosition: "100% 50%" },
-          "100%": { backgroundPosition: "0% 50%" },
         },
         "fade-up": {
           "0%": { opacity: "0", transform: "translateY(10px)" },
@@ -134,23 +106,13 @@ export default {
           "0%": { opacity: "0", transform: "translateX(8px)" },
           "100%": { opacity: "1", transform: "translateX(0)" },
         },
-        "glow-pulse": {
-          "0%, 100%": { boxShadow: "0 0 20px -4px hsl(217 92% 58% / 0.15)" },
-          "50%": { boxShadow: "0 0 36px -4px hsl(217 92% 58% / 0.3)" },
-        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
-        "subtle-glow": "subtle-glow 3s ease-in-out infinite",
-        "border-shimmer": "border-shimmer 5s ease infinite",
-        "float": "float 6s ease-in-out infinite",
-        "pulse-glow": "pulse-glow 3s ease-in-out infinite",
-        "gradient-shift": "gradient-shift 8s ease infinite",
         "fade-up": "fade-up 0.4s ease-out",
         "scale-in": "scale-in 0.3s ease-out",
         "slide-in-right": "slide-in-right 0.3s ease-out",
-        "glow-pulse": "glow-pulse 3s ease-in-out infinite",
       },
     },
   },

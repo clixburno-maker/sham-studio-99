@@ -94,7 +94,7 @@ export default function SavedScriptsPage() {
             <FileText className="w-5 h-5 text-emerald-400" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight gradient-text">Saved Scripts</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-[#e5e5e5]">Saved Scripts</h1>
             <p className="text-muted-foreground text-sm">
               {scripts?.length || 0} scripts generated
             </p>
@@ -104,14 +104,14 @@ export default function SavedScriptsPage() {
         {isLoading ? (
           <div className="text-center py-12 text-muted-foreground">Loading...</div>
         ) : !scripts?.length ? (
-          <Card className="glass-card p-12 rounded-2xl text-center">
+          <Card className="p-12 rounded-lg text-center">
             <FileText className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
             <h3 className="font-semibold text-lg mb-2">No scripts yet</h3>
             <p className="text-sm text-muted-foreground mb-6">
               Scripts you generate will be automatically saved here
             </p>
             <Link href="/write">
-              <Button className="gradient-btn text-white glow-sm">Write a Script</Button>
+              <Button className="bg-primary text-white">Write a Script</Button>
             </Link>
           </Card>
         ) : (
@@ -119,7 +119,7 @@ export default function SavedScriptsPage() {
             {scripts.map((script) => (
               <Card
                 key={script.id}
-                className="glass-card rounded-xl overflow-hidden transition-all duration-200 hover:border-[var(--glass-border-hover)]"
+                className="rounded-xl overflow-hidden transition-all duration-200 hover:border-[var(--glass-border-hover)]"
               >
                 <div
                   className="p-4 cursor-pointer"
@@ -197,7 +197,7 @@ export default function SavedScriptsPage() {
 
                 {expandedId === script.id && (
                   <div className="px-4 pb-4 animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="border-t border-[var(--glass-border)] pt-3">
+                    <div className="border-t border-[#1a1a1a] pt-3">
                       <pre className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed max-h-[300px] overflow-y-auto font-sans">
                         {script.script}
                       </pre>

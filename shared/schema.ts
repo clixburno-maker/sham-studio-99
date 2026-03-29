@@ -59,6 +59,8 @@ export const generatedImages = pgTable("generated_images", {
   videoModel: text("video_model"),
   videoError: text("video_error"),
   error: text("error"),
+  qualityScore: text("quality_score"),
+  qualityFeedback: text("quality_feedback"),
 });
 
 export const insertImageSchema = createInsertSchema(generatedImages).omit({ id: true });
@@ -136,6 +138,37 @@ export const characterReferences = pgTable("character_references", {
 export const insertCharacterReferenceSchema = createInsertSchema(characterReferences).omit({ id: true });
 export type InsertCharacterReference = z.infer<typeof insertCharacterReferenceSchema>;
 export type CharacterReference = typeof characterReferences.$inferSelect;
+
+export const locationReferences = pgTable("location_references", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull(),
+  locationName: text("location_name").notNull(),
+  description: text("description").notNull(),
+  prompt: text("prompt").notNull(),
+  imageUrl: text("image_url"),
+  status: text("status").notNull().default("pending"),
+  taskId: text("task_id"),
+});
+
+export const insertLocationReferenceSchema = createInsertSchema(locationReferences).omit({ id: true });
+export type InsertLocationReference = z.infer<typeof insertLocationReferenceSchema>;
+export type LocationReference = typeof locationReferences.$inferSelect;
+
+export const characterFacePhotos = pgTable("character_face_photos", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull(),
+  characterName: text("character_name").notNull(),
+  originalPhotoUrl: text("original_photo_url").notNull(),
+  stylizedPhotoUrl: text("stylized_photo_url"),
+  stylizedTaskId: text("stylized_task_id"),
+  status: text("status").notNull().default("uploaded"),
+  originalFilename: text("original_filename"),
+  createdAt: text("created_at").default(sql`now()::text`),
+});
+
+export const insertCharacterFacePhotoSchema = createInsertSchema(characterFacePhotos).omit({ id: true });
+export type InsertCharacterFacePhoto = z.infer<typeof insertCharacterFacePhotoSchema>;
+export type CharacterFacePhoto = typeof characterFacePhotos.$inferSelect;
 
 export const niches = pgTable("niches", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

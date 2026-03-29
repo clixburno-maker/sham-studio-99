@@ -298,7 +298,7 @@ export default function NichesPage() {
               <BookOpen className="w-5 h-5 text-orange-400" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold tracking-tight gradient-text">Niche Training</h1>
+              <h1 className="text-2xl font-bold tracking-tight text-[#e5e5e5]">Niche Training</h1>
               <p className="text-muted-foreground text-sm">
                 Train AI to write scripts in your competitor's style
               </p>
@@ -306,11 +306,7 @@ export default function NichesPage() {
           </div>
           <button
             onClick={() => { setShowForm(!showForm); setPreviewVideos(null); setPreviewChannelName(null); }}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-semibold
-              bg-white/10 dark:bg-white/[0.08] backdrop-blur-xl border border-white/20 dark:border-white/[0.12] text-foreground
-              shadow-lg hover:bg-white/15 dark:hover:bg-white/[0.12] hover:border-white/30 dark:hover:border-white/[0.18]
-              hover:shadow-xl hover:scale-[1.02] active:scale-[0.98]
-              transition-all duration-300"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-semibold bg-white/10 border border-white/20 text-foreground hover:bg-white/15 hover:border-white/30 transition-all duration-300"
           >
             <Plus className="w-4 h-4" />
             Add Niche
@@ -318,7 +314,7 @@ export default function NichesPage() {
         </div>
 
         {showForm && (
-          <Card className="glass-card rounded-2xl p-6 mb-8 animate-in fade-in slide-in-from-top-4 duration-300">
+          <Card className="rounded-lg p-6 mb-8 animate-in fade-in slide-in-from-top-4 duration-300">
             <div className="flex items-center gap-3 mb-5">
               <div className="w-10 h-10 rounded-xl bg-red-500/10 ring-1 ring-red-500/20 flex items-center justify-center">
                 <Youtube className="w-5 h-5 text-red-400" />
@@ -338,7 +334,7 @@ export default function NichesPage() {
                   placeholder="e.g. Military Aviation Documentary, Naval History"
                   value={nicheName}
                   onChange={(e) => setNicheName(e.target.value)}
-                  className="glass-input rounded-xl"
+                  className="surface-input rounded-xl"
                 />
               </div>
 
@@ -349,13 +345,13 @@ export default function NichesPage() {
                     placeholder="https://youtube.com/@ChannelName"
                     value={channelUrl}
                     onChange={(e) => { setChannelUrl(e.target.value); setPreviewVideos(null); setPreviewChannelName(null); setSelectedVideoIds(new Set()); }}
-                    className="glass-input rounded-xl flex-1"
+                    className="surface-input rounded-xl flex-1"
                   />
                   <button
                     onClick={() => previewMutation.mutate()}
                     disabled={!channelUrl.trim() || previewMutation.isPending}
                     className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold shrink-0
-                      transition-all duration-300 active:scale-[0.98]
+                      transition-all duration-300
                       ${channelUrl.trim()
                         ? "bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20"
                         : "bg-white/5 border border-white/10 text-muted-foreground cursor-not-allowed opacity-50"
@@ -380,7 +376,7 @@ export default function NichesPage() {
                     <div className="flex items-center gap-2">
                       <Youtube className="w-4 h-4 text-red-400" />
                       <span className="text-sm font-medium">{previewChannelName}</span>
-                      <span className="text-[10px] text-muted-foreground glass-card px-1.5 py-0.5 rounded border border-[var(--glass-border)]">
+                      <span className="text-[10px] text-muted-foreground px-1.5 py-0.5 rounded border border-[#1a1a1a]">
                         Top {previewVideos.length} videos
                       </span>
                     </div>
@@ -446,7 +442,7 @@ export default function NichesPage() {
               <div className="flex justify-end gap-3 pt-2">
                 <button
                   onClick={() => { setShowForm(false); setPreviewVideos(null); setPreviewChannelName(null); }}
-                  className="ghost-btn px-5 py-2.5 rounded-2xl"
+                  className="flat-btn-ghost px-5 py-2.5 rounded-2xl"
                 >
                   Cancel
                 </button>
@@ -454,12 +450,11 @@ export default function NichesPage() {
                   <button
                     onClick={() => createAndExtractMutation.mutate()}
                     disabled={!nicheName.trim() || selectedVideoIds.size === 0 || createAndExtractMutation.isPending}
-                    className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-2xl text-sm font-semibold
-                      transition-all duration-300 active:scale-[0.98]
-                      ${nicheName.trim()
-                        ? "bg-white/10 dark:bg-white/[0.08] backdrop-blur-xl border border-white/20 dark:border-white/[0.12] text-foreground shadow-lg hover:bg-white/15 dark:hover:bg-white/[0.12] hover:border-white/30 dark:hover:border-white/[0.18] hover:shadow-xl hover:scale-[1.02]"
-                        : "bg-white/5 dark:bg-white/[0.03] border border-white/10 dark:border-white/[0.06] text-muted-foreground cursor-not-allowed opacity-50"
-                      }`}
+                    className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-2xl text-sm font-semibold transition-all duration-300 ${
+                      nicheName.trim()
+                        ? "bg-white/10 border border-white/20 text-foreground hover:bg-white/15 hover:border-white/30"
+                        : "bg-white/5 border border-white/10 text-muted-foreground cursor-not-allowed opacity-50"
+                    }`}
                   >
                     {createAndExtractMutation.isPending ? (
                       <>
@@ -480,11 +475,11 @@ export default function NichesPage() {
         )}
 
         {activeNicheId && progress && progress.step !== "complete" && progress.step !== "extracted" && progress.step !== "error" && (
-          <Card className="glass-card rounded-2xl p-5 mb-6 animate-in fade-in duration-300">
+          <Card className="rounded-lg p-5 mb-6 animate-in fade-in duration-300">
             <div className="flex items-center gap-3">
               <div className="relative">
-                <div className="absolute inset-0 rounded-full gradient-btn opacity-20 animate-ping" />
-                <div className="relative w-10 h-10 rounded-full gradient-btn flex items-center justify-center">
+                <div className="absolute inset-0 rounded-full bg-primary opacity-20 animate-ping" />
+                <div className="relative w-10 h-10 rounded-full bg-primary flex items-center justify-center">
                   <Loader2 className="w-5 h-5 text-white animate-spin" />
                 </div>
               </div>
@@ -497,9 +492,9 @@ export default function NichesPage() {
               )}
             </div>
             {progress.total > 1 && (
-              <div className="mt-3 h-1.5 rounded-full bg-[var(--glass-border)] overflow-hidden">
+              <div className="mt-3 h-1.5 rounded-full bg-[#1a1a1a] overflow-hidden">
                 <div
-                  className="h-full rounded-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-500"
+                  className="h-full rounded-full bg-primary transition-all duration-500"
                   style={{ width: `${(progress.current / progress.total) * 100}%` }}
                 />
               </div>
@@ -569,7 +564,7 @@ export default function NichesPage() {
                     <>
                       <div className="h-1 rounded-full bg-purple-500/10 overflow-hidden mb-3">
                         <div
-                          className="h-full rounded-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-700 ease-out"
+                          className="h-full rounded-full bg-purple-500 transition-all duration-700 ease-out"
                           style={{ width: `${(progress.analysisSteps.filter(s => s.status === "done").length / progress.analysisSteps.length) * 100}%` }}
                         />
                       </div>
@@ -614,7 +609,7 @@ export default function NichesPage() {
         {isLoading && (
           <div className="grid gap-4">
             {[1, 2].map((i) => (
-              <Card key={i} className="glass-card rounded-2xl p-5">
+              <Card key={i} className="rounded-lg p-5">
                 <div className="h-5 w-1/3 bg-muted/30 rounded animate-pulse mb-2" />
                 <div className="h-4 w-2/3 bg-muted/20 rounded animate-pulse" />
               </Card>
@@ -623,7 +618,7 @@ export default function NichesPage() {
         )}
 
         {!isLoading && niches && niches.length === 0 && !showForm && (
-          <Card className="glass-card rounded-2xl p-12 text-center">
+          <Card className="rounded-lg p-12 text-center">
             <div className="w-16 h-16 rounded-2xl bg-orange-500/10 ring-1 ring-orange-500/20 flex items-center justify-center mx-auto mb-4">
               <BookOpen className="w-7 h-7 text-orange-400" />
             </div>
@@ -633,11 +628,7 @@ export default function NichesPage() {
             </p>
             <button
               onClick={() => setShowForm(true)}
-              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-2xl text-sm font-semibold
-                bg-white/10 dark:bg-white/[0.08] backdrop-blur-xl border border-white/20 dark:border-white/[0.12] text-foreground
-                shadow-lg hover:bg-white/15 dark:hover:bg-white/[0.12] hover:border-white/30 dark:hover:border-white/[0.18]
-                hover:shadow-xl hover:scale-[1.02] active:scale-[0.98]
-                transition-all duration-300"
+              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-2xl text-sm font-semibold bg-white/10 border border-white/20 text-foreground hover:bg-white/15 hover:border-white/30 transition-all duration-300"
             >
               <Plus className="w-4 h-4" />
               Train First Niche
@@ -648,7 +639,7 @@ export default function NichesPage() {
         {!isLoading && niches && niches.length > 0 && (
           <div className="grid gap-4">
             {niches.map((niche) => (
-              <Card key={niche.id} className="glass-card rounded-2xl overflow-hidden group relative">
+              <Card key={niche.id} className="rounded-lg overflow-hidden group relative">
                 <div className="p-5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3 min-w-0">
@@ -666,7 +657,7 @@ export default function NichesPage() {
                         <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
                           {niche.channelName && <span>{niche.channelName}</span>}
                           {niche.videoCount && niche.videoCount > 0 && (
-                            <span className="glass-card px-1.5 py-0.5 rounded text-[10px] border border-[var(--glass-border)]">
+                            <span className="px-1.5 py-0.5 rounded text-[10px] border border-[#1a1a1a]">
                               {niche.videoCount} videos
                             </span>
                           )}
@@ -708,7 +699,7 @@ export default function NichesPage() {
                             setExpandedNiche(expandedNiche === niche.id ? null : niche.id);
                             setExpandedTranscript(null);
                           }}
-                          className="p-1.5 rounded-lg hover:bg-[var(--glass-highlight)] transition-colors"
+                          className="p-1.5 rounded-lg hover:bg-[rgba(255,255,255,0.05)] transition-colors"
                         >
                           {expandedNiche === niche.id ? (
                             <ChevronUp className="w-4 h-4 text-muted-foreground" />
@@ -731,8 +722,8 @@ export default function NichesPage() {
                 </div>
 
                 {expandedNiche === niche.id && (
-                  <div className="border-t border-[var(--glass-border)] animate-in fade-in slide-in-from-top-2 duration-300">
-                    <div className="flex items-center justify-between border-b border-[var(--glass-border)]">
+                  <div className="border-t border-[#1a1a1a] animate-in fade-in slide-in-from-top-2 duration-300">
+                    <div className="flex items-center justify-between border-b border-[#1a1a1a]">
                       <div className="flex">
                         <button
                           onClick={() => setExpandedTab("videos")}
@@ -774,7 +765,7 @@ export default function NichesPage() {
                         <button
                           onClick={() => retrainMutation.mutate(niche.id)}
                           disabled={retrainMutation.isPending}
-                          className="ghost-btn text-[11px] px-3 py-1.5 inline-flex items-center gap-1.5"
+                          className="flat-btn-ghost text-[11px] px-3 py-1.5 inline-flex items-center gap-1.5"
                         >
                           <RotateCcw className="w-3 h-3" />
                           Reset
@@ -805,10 +796,10 @@ export default function NichesPage() {
                         ) : (
                           <div className="space-y-2">
                             {nicheVideos.map((video) => (
-                              <div key={video.id} className="glass-card rounded-xl border border-[var(--glass-border)] overflow-hidden">
+                              <div key={video.id} className="rounded-xl border border-[#1a1a1a] overflow-hidden">
                                 <button
                                   onClick={() => setExpandedTranscript(expandedTranscript === video.id ? null : video.id)}
-                                  className="w-full flex items-center gap-3 p-3 text-left hover:bg-[var(--glass-highlight)] transition-colors duration-200"
+                                  className="w-full flex items-center gap-3 p-3 text-left hover:bg-[rgba(255,255,255,0.05)] transition-colors duration-200"
                                 >
                                   <img
                                     src={`https://img.youtube.com/vi/${video.videoId}/mqdefault.jpg`}
@@ -841,7 +832,7 @@ export default function NichesPage() {
                                   </div>
                                 </button>
                                 {expandedTranscript === video.id && (
-                                  <div className="border-t border-[var(--glass-border)] p-4 animate-in fade-in duration-200">
+                                  <div className="border-t border-[#1a1a1a] p-4 animate-in fade-in duration-200">
                                     <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Full Transcript</div>
                                     <div className="text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                                       {video.transcript}
@@ -868,7 +859,7 @@ export default function NichesPage() {
                             { label: "Dramatic Techniques", value: (niche.styleProfile as any).dramaticTechniques },
                             { label: "Unique Qualities", value: (niche.styleProfile as any).uniqueQualities },
                           ].filter(item => item.value).map((item) => (
-                            <div key={item.label} className="glass-card rounded-xl p-3 border border-[var(--glass-border)]">
+                            <div key={item.label} className="rounded-xl p-3 border border-[#1a1a1a]">
                               <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">{item.label}</div>
                               <div className="text-xs leading-relaxed">{item.value}</div>
                             </div>
@@ -879,7 +870,7 @@ export default function NichesPage() {
                             <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Signature Phrases</div>
                             <div className="flex flex-wrap gap-1.5">
                               {((niche.styleProfile as any).signaturePhrases as string[]).map((phrase, i) => (
-                                <span key={i} className="text-[11px] px-2.5 py-1 rounded-lg glass-card border border-[var(--glass-border)]">
+                                <span key={i} className="text-[11px] px-2.5 py-1 rounded-lg border border-[#1a1a1a]">
                                   "{phrase}"
                                 </span>
                               ))}
@@ -887,7 +878,7 @@ export default function NichesPage() {
                           </div>
                         )}
                         {(niche.styleProfile as any).writingInstructions && (
-                          <div className="mt-4 glass-card rounded-xl p-4 border border-[var(--glass-border)]">
+                          <div className="mt-4 rounded-xl p-4 border border-[#1a1a1a]">
                             <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Writing Instructions</div>
                             <div className="text-xs leading-relaxed text-muted-foreground">
                               {(niche.styleProfile as any).writingInstructions}

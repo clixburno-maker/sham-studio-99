@@ -99,7 +99,7 @@ export default function VoiceoverPage() {
     },
   });
 
-  const selectedVoice = voices?.find((v) => v.voice_id === selectedVoiceId);
+  const selectedVoice = voices?.find((v) => v.voice_id === selectedVoiceId || v.name === selectedVoiceId);
   const presetVoices = voices?.filter((v) => v.category !== "custom") || [];
   const customVoices = voices?.filter((v) => v.category === "custom") || [];
   const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
@@ -117,30 +117,30 @@ export default function VoiceoverPage() {
     <div className="min-h-full p-6 md:p-10">
       <div className="max-w-3xl mx-auto">
         <Link href="/">
-          <button className="ghost-btn mb-6 text-sm">
+          <button className="flat-btn-ghost mb-6 text-sm">
             <ArrowLeft className="w-4 h-4" />
             Back to Dashboard
           </button>
         </Link>
 
         <div className="flex items-center gap-3 mb-8">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500/15 to-cyan-500/10 ring-1 ring-blue-500/20 flex items-center justify-center">
+          <div className="w-12 h-12 rounded-xl bg-primary/10 ring-1 ring-blue-500/20 flex items-center justify-center">
             <Mic className="w-6 h-6 text-blue-400" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight gradient-text">Voiceover Studio</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-[#e5e5e5]">Voiceover Studio</h1>
             <p className="text-muted-foreground text-sm">Generate AI voiceovers with any ElevenLabs voice</p>
           </div>
         </div>
 
         <div className="space-y-6">
-          <Card className="glass-card rounded-2xl p-6">
+          <Card className="rounded-lg p-6">
             <Label className="text-sm font-medium mb-2 block">Script Text</Label>
             <Textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder="Paste your script or type the text you want to convert to speech..."
-              className="min-h-[200px] bg-[var(--glass-bg)] border-[var(--glass-border)] rounded-xl resize-y text-sm leading-relaxed"
+              className="min-h-[200px] bg-[#111] border-[#1a1a1a] rounded-xl resize-y text-sm leading-relaxed"
             />
             {wordCount > 0 && (
               <div className="flex items-center gap-3 mt-3 text-xs text-muted-foreground">
@@ -151,7 +151,7 @@ export default function VoiceoverPage() {
             )}
           </Card>
 
-          <Card className="glass-card rounded-2xl p-6">
+          <Card className="rounded-lg p-6">
             <div className="flex items-center justify-between mb-3">
               <Label className="text-sm font-medium">Voice Selection</Label>
               <button
@@ -164,7 +164,7 @@ export default function VoiceoverPage() {
             </div>
 
             {showAddVoice && (
-              <Card className="mb-4 p-4 glass-card rounded-xl border-blue-500/20">
+              <Card className="mb-4 p-4 rounded-xl border-blue-500/20">
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-sm font-medium">Add Custom ElevenLabs Voice</span>
                   <button onClick={() => setShowAddVoice(false)} className="text-muted-foreground hover:text-foreground p-0.5">
@@ -179,7 +179,7 @@ export default function VoiceoverPage() {
                       value={newVoiceName}
                       onChange={(e) => setNewVoiceName(e.target.value)}
                       placeholder="e.g. My Narrator Voice"
-                      className="w-full px-3 py-2 rounded-lg bg-[var(--glass-bg)] border border-[var(--glass-border)] text-sm focus:border-blue-400/50 focus:outline-none transition-colors"
+                      className="w-full px-3 py-2 rounded-lg bg-[#111] border border-[#1a1a1a] text-sm focus:border-blue-400/50 focus:outline-none transition-colors"
                     />
                   </div>
                   <div>
@@ -189,7 +189,7 @@ export default function VoiceoverPage() {
                       value={newVoiceId}
                       onChange={(e) => setNewVoiceId(e.target.value)}
                       placeholder="e.g. zKb9yQZzbyTOE2hxatpu"
-                      className="w-full px-3 py-2 rounded-lg bg-[var(--glass-bg)] border border-[var(--glass-border)] text-sm font-mono focus:border-blue-400/50 focus:outline-none transition-colors"
+                      className="w-full px-3 py-2 rounded-lg bg-[#111] border border-[#1a1a1a] text-sm font-mono focus:border-blue-400/50 focus:outline-none transition-colors"
                     />
                   </div>
                   <div>
@@ -199,7 +199,7 @@ export default function VoiceoverPage() {
                       value={newVoiceDesc}
                       onChange={(e) => setNewVoiceDesc(e.target.value)}
                       placeholder="e.g. Deep cinematic narrator"
-                      className="w-full px-3 py-2 rounded-lg bg-[var(--glass-bg)] border border-[var(--glass-border)] text-sm focus:border-blue-400/50 focus:outline-none transition-colors"
+                      className="w-full px-3 py-2 rounded-lg bg-[#111] border border-[#1a1a1a] text-sm focus:border-blue-400/50 focus:outline-none transition-colors"
                     />
                   </div>
                   <button
@@ -222,7 +222,7 @@ export default function VoiceoverPage() {
             <div className="relative mb-4">
               <button
                 onClick={() => setShowVoiceDropdown(!showVoiceDropdown)}
-                className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-[var(--glass-bg)] border border-[var(--glass-border)] hover:border-primary/30 transition-colors text-left"
+                className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-[#111] border border-[#1a1a1a] hover:border-primary/30 transition-colors text-left"
               >
                 <div className="flex items-center gap-2">
                   {selectedVoice ? (
@@ -241,17 +241,16 @@ export default function VoiceoverPage() {
               </button>
 
               {showVoiceDropdown && voices && (
-                <div className="absolute top-full left-0 right-0 mt-1 z-50 glass-card rounded-xl border border-[var(--glass-border)] shadow-xl max-h-80 overflow-y-auto">
+                <div className="absolute top-full left-0 right-0 mt-1 z-50 rounded-xl border border-[#1a1a1a] max-h-80 overflow-y-auto">
                   {customVoices.length > 0 && (
                     <>
-                      <div className="px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-purple-400/70 border-b border-[var(--glass-border)]">
+                      <div className="px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-purple-400/70 border-b border-[#1a1a1a]">
                         Your Custom Voices
                       </div>
                       {customVoices.map((voice) => (
                         <div
                           key={voice.voice_id}
-                          className={`flex items-center gap-2 px-4 py-2.5 hover:bg-[var(--glass-highlight)] transition-colors
-                            ${selectedVoiceId === voice.voice_id ? "bg-purple-500/5" : ""}`}
+                          className={`flex items-center gap-2 px-4 py-2.5 hover:bg-[rgba(255,255,255,0.05)] transition-colors ${selectedVoiceId === voice.voice_id ? "bg-purple-500/5" : ""}`}
                         >
                           <button
                             onClick={() => {
@@ -287,7 +286,7 @@ export default function VoiceoverPage() {
                     </>
                   )}
 
-                  <div className="px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50 border-b border-[var(--glass-border)]">
+                  <div className="px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50 border-b border-[#1a1a1a]">
                     {customVoices.length > 0 ? "Preset Voices" : "Available Voices"}
                   </div>
                   {presetVoices.map((voice) => (
@@ -297,8 +296,7 @@ export default function VoiceoverPage() {
                         setSelectedVoiceId(voice.voice_id);
                         setShowVoiceDropdown(false);
                       }}
-                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-[var(--glass-highlight)] transition-colors
-                        ${selectedVoiceId === voice.voice_id ? "bg-blue-500/5" : ""}`}
+                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-[rgba(255,255,255,0.05)] transition-colors ${selectedVoiceId === voice.voice_id ? "bg-blue-500/5" : ""}`}
                     >
                       <div className="flex-1 min-w-0">
                         <span className={`text-sm font-medium ${selectedVoiceId === voice.voice_id ? "text-blue-400" : "text-foreground"}`}>
@@ -318,9 +316,7 @@ export default function VoiceoverPage() {
             <button
               onClick={() => voiceoverMutation.mutate()}
               disabled={voiceoverMutation.isPending || !text.trim()}
-              className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold
-                gradient-btn text-white border-0 glow-sm hover:glow-md transition-all duration-300
-                disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold bg-primary text-white border-0 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {voiceoverMutation.isPending ? (
                 <><Loader2 className="w-4 h-4 animate-spin" /> Generating...</>
@@ -331,11 +327,11 @@ export default function VoiceoverPage() {
           </Card>
 
           {voiceoverMutation.isPending && (
-            <Card className="glass-card rounded-2xl p-5 border-blue-500/10">
+            <Card className="rounded-lg p-5 border-blue-500/10">
               <div className="flex items-center gap-3">
                 <div className="relative">
                   <div className="absolute inset-0 rounded-full bg-blue-500/20 animate-ping" />
-                  <div className="relative w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center">
+                  <div className="relative w-10 h-10 rounded-full bg-primary flex items-center justify-center">
                     <Volume2 className="w-5 h-5 text-white" />
                   </div>
                 </div>
@@ -346,16 +342,16 @@ export default function VoiceoverPage() {
                   </p>
                 </div>
               </div>
-              <div className="mt-3 h-1.5 bg-[var(--glass-bg)] rounded-full overflow-hidden">
+              <div className="mt-3 h-1.5 bg-[#111] rounded-full overflow-hidden">
                 <div className="h-full bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full animate-pulse" style={{ width: "60%" }} />
               </div>
             </Card>
           )}
 
           {voiceoverUrl && (
-            <Card className="glass-card rounded-2xl p-5 border-green-500/10">
+            <Card className="rounded-lg p-5 border-green-500/10">
               <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-500 to-emerald-500 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-full bg-green-500 flex items-center justify-center">
                   <Check className="w-5 h-5 text-white" />
                 </div>
                 <div className="flex-1">
@@ -376,7 +372,7 @@ export default function VoiceoverPage() {
                       audioRef.current.play();
                     }
                   }}
-                  className="w-10 h-10 rounded-full gradient-btn flex items-center justify-center shrink-0 glow-sm hover:glow-md transition-all active:scale-95"
+                  className="w-10 h-10 rounded-full bg-primary flex items-center justify-center shrink-0 transition-all active:scale-95"
                 >
                   {isPlaying ? <Pause className="w-4 h-4 text-white" /> : <Play className="w-4 h-4 text-white ml-0.5" />}
                 </button>
@@ -394,7 +390,7 @@ export default function VoiceoverPage() {
               <div className="flex gap-2">
                 <button
                   onClick={handleDownload}
-                  className="flex-1 ghost-btn justify-center"
+                  className="flex-1 flat-btn-ghost justify-center"
                 >
                   <Download className="w-4 h-4" />
                   Download MP3
@@ -409,7 +405,7 @@ export default function VoiceoverPage() {
                     voiceoverMutation.mutate();
                   }}
                   disabled={voiceoverMutation.isPending}
-                  className="flex-1 ghost-btn justify-center"
+                  className="flex-1 flat-btn-ghost justify-center"
                 >
                   <RotateCcw className="w-4 h-4" />
                   Regenerate

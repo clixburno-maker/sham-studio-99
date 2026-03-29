@@ -4,7 +4,6 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -22,6 +21,7 @@ import {
 } from "lucide-react";
 import type { Project, Scene, GeneratedImage, ScriptAnalysis } from "@shared/schema";
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useChat } from "@/lib/chat-context";
 
 const COST_ANALYSIS_BASE = 0.50;
 
@@ -44,13 +44,13 @@ interface VideoModel {
 }
 
 const VIDEO_MODELS: VideoModel[] = [
-  { id: "grok", name: "Grok Imagine Video", apiModel: "grok-imagine-image-to-video", duration: 6, quality: "720p", costPerClip: 0.064, description: "Fast, affordable 6s clips at 720p", tier: "budget" },
-  { id: "hailuo", name: "Hailuo 2.3 Fast", apiModel: "MiniMax-Hailuo-2.3-Fast", duration: 6, quality: "768p", costPerClip: 0.167, description: "MiniMax 6s clips — great motion and expressions", tier: "mid" },
-  { id: "veo31", name: "Veo 3.1 Quality", apiModel: "veo3.1-fast", duration: 8, quality: "1080p", costPerClip: 0.168, description: "Google 8s clips at 1080p with cinematic motion", tier: "mid" },
-  { id: "seedance", name: "Seedance 1.5 Pro", apiModel: "seedance-1.5-pro", duration: 8, quality: "720p", costPerClip: 0.198, description: "ByteDance cinematic 8s clips with camera control", tier: "mid" },
-  { id: "ltx23", name: "LTX 2.3", apiModel: "ltx-2-3-fast", duration: 8, quality: "1080p", costPerClip: 0.32, description: "Lightricks 8s clips at 1080p — fast, cinematic with camera motion", tier: "mid" },
-  { id: "sora2pro", name: "Sora 2 Pro", apiModel: "sora-2-pro", duration: 15, quality: "1080p", costPerClip: 0.958, description: "OpenAI premium 15s HD with physics-accurate motion", tier: "premium" },
-  { id: "kling", name: "Kling 3.0", apiModel: "kling-v3-image-to-video", duration: 15, quality: "1080p", costPerClip: 1.50, description: "Premium 15s at 1080p — maximum duration, best motion", tier: "premium" },
+  { id: "grok", name: "Grok Imagine Video", apiModel: "grok-imagine-image-to-video", duration: 6, quality: "720p", costPerClip: 0.128, description: "Fast 6s clips at 720p — $0.128/video", tier: "budget" },
+  { id: "hailuo", name: "Hailuo 2.3 Fast", apiModel: "MiniMax-Hailuo-2.3-Fast", duration: 6, quality: "768p", costPerClip: 0.167, description: "MiniMax 6s clips at 768p — $0.167/video", tier: "budget" },
+  { id: "seedance", name: "Seedance 1.5 Pro", apiModel: "seedance-1.5-pro", duration: 8, quality: "720p", costPerClip: 0.20, description: "ByteDance 8s clips at 720p — $0.025/sec", tier: "mid" },
+  { id: "ltx23", name: "LTX 2.3", apiModel: "ltx-2-3-fast", duration: 8, quality: "1080p", costPerClip: 0.32, description: "Lightricks 8s clips at 1080p — fast, cinematic", tier: "mid" },
+  { id: "veo31", name: "Veo 3.1 Fast", apiModel: "veo3.1-fast", duration: 8, quality: "1080p", costPerClip: 0.64, description: "Google 8s clips at 1080p — $0.08/sec, cinematic", tier: "mid" },
+  { id: "sora2pro", name: "Sora 2 Pro", apiModel: "sora-2-pro", duration: 15, quality: "1080p", costPerClip: 0.958, description: "OpenAI 15s HD — physics-accurate motion", tier: "premium" },
+  { id: "kling", name: "Kling 3.0", apiModel: "kling-v3-image-to-video", duration: 15, quality: "1080p", costPerClip: 1.125, description: "Premium 15s at 1080p — $0.075/sec, best motion", tier: "premium" },
 ];
 
 interface ImageModel {
@@ -66,13 +66,17 @@ interface ImageModel {
 }
 
 const IMAGE_MODELS: ImageModel[] = [
-  { id: "nanobanana", name: "NanoBanana Pro", apiModel: "gemini-3-pro-image-preview", quality: "4K", resolution: "4K", costPerImage: 0.05, description: "Gemini-powered 4K photorealistic images — proven quality", maxRefImages: 3, tier: "mid" },
+  { id: "nb2-1k", name: "NanoBanana 2 — 1K", apiModel: "gemini-3.1-flash-image-preview", quality: "1K", resolution: "1K", costPerImage: 0.054, description: "Gemini Flash — fast 1K images, cheapest option", maxRefImages: 3, tier: "budget" },
+  { id: "nb2-2k", name: "NanoBanana 2 — 2K", apiModel: "gemini-3.1-flash-image-preview", quality: "2K", resolution: "2K", costPerImage: 0.081, description: "Gemini Flash — fast 2K images, great value", maxRefImages: 3, tier: "budget" },
+  { id: "nb2-4k", name: "NanoBanana 2 — 4K", apiModel: "gemini-3.1-flash-image-preview", quality: "4K", resolution: "4K", costPerImage: 0.121, description: "Gemini Flash — fast 4K ultra-quality images", maxRefImages: 3, tier: "mid" },
+  { id: "nbpro-2k", name: "NanoBanana Pro — 2K", apiModel: "gemini-3-pro-image-preview", quality: "2K", resolution: "2K", costPerImage: 0.121, description: "Gemini Pro — highest fidelity 2K images", maxRefImages: 3, tier: "mid" },
+  { id: "nbpro-4k", name: "NanoBanana Pro — 4K", apiModel: "gemini-3-pro-image-preview", quality: "4K", resolution: "4K", costPerImage: 0.192, description: "Gemini Pro — highest fidelity 4K ultra-quality", maxRefImages: 3, tier: "premium" },
 ];
 
 const TIER_COLORS: Record<ModelTier, { border: string; bg: string; text: string; label: string }> = {
-  budget: { border: "border-emerald-500/40", bg: "from-emerald-500/10 to-emerald-500/5", text: "text-emerald-400", label: "Budget" },
-  mid: { border: "border-blue-500/40", bg: "from-blue-500/10 to-blue-500/5", text: "text-blue-400", label: "Mid-Tier" },
-  premium: { border: "border-amber-500/40", bg: "from-amber-500/10 to-amber-500/5", text: "text-amber-400", label: "Premium" },
+  budget: { border: "border-emerald-500/40", bg: "bg-emerald-500/10", text: "text-emerald-400", label: "Budget" },
+  mid: { border: "border-blue-500/40", bg: "bg-blue-500/10", text: "text-blue-400", label: "Mid-Tier" },
+  premium: { border: "border-amber-500/40", bg: "bg-amber-500/10", text: "text-amber-400", label: "Premium" },
 };
 
 const COST_ANALYSIS_PER_SCENE = 0.30;
@@ -108,12 +112,20 @@ export default function ProjectView() {
   const [generatingSceneId, setGeneratingSceneId] = useState<string | null>(null);
   const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisMode, setAnalysisMode] = useState<"fast" | "budget">("fast");
   const [analysisStartTime, setAnalysisStartTime] = useState<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [genProgress, setGenProgress] = useState<GenerationProgress | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [genElapsed, setGenElapsed] = useState(0);
   const [genStartTime, setGenStartTime] = useState<number | null>(null);
+
+  const { setProjectId, setFocusedSceneId } = useChat();
+
+  useEffect(() => {
+    if (id) setProjectId(id);
+    return () => { setProjectId(null); setFocusedSceneId(null); };
+  }, [id, setProjectId, setFocusedSceneId]);
 
   const { data: project, isLoading: projectLoading } = useQuery<Project>({
     queryKey: ["/api/projects", id],
@@ -139,7 +151,8 @@ export default function ProjectView() {
 
   const { data: charRefsData } = useQuery<any[]>({
     queryKey: ["/api/projects", id, "character-references"],
-    enabled: !!project && project.status !== "draft",
+    enabled: !!project,
+    staleTime: 0,
     refetchInterval: (query) => {
       const data = query.state.data;
       return data?.some((r: any) => r.status === "generating") ? 5000 : false;
@@ -180,32 +193,51 @@ export default function ProjectView() {
   const [selectedVideoDuration, setSelectedVideoDuration] = useState<number | null>(null);
   const [isGeneratingAllVideos, setIsGeneratingAllVideos] = useState(false);
   const currentVideoModel = VIDEO_MODELS.find(m => m.id === selectedVideoModel) || VIDEO_MODELS[0];
-  const [selectedImageModel, setSelectedImageModel] = useState<string>("nanobanana");
+  const [selectedImageModel, setSelectedImageModel] = useState<string>("nbpro-4k");
   const currentImageModel = IMAGE_MODELS.find(m => m.id === selectedImageModel) || IMAGE_MODELS[0];
   const [voiceoverPlaying, setVoiceoverPlaying] = useState(false);
   const voiceoverAudioRef = useRef<HTMLAudioElement | null>(null);
   const [showImageModelPicker, setShowImageModelPicker] = useState(false);
   const [showVideoModelPicker, setShowVideoModelPicker] = useState(false);
 
+  const pollFailCountRef = useRef(0);
   useEffect(() => {
     if (!hasGeneratingImages || !id) return;
+    pollFailCountRef.current = 0;
     const interval = setInterval(async () => {
       try {
         await apiRequest("POST", `/api/projects/${id}/poll-images`);
         queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "images"] });
         queryClient.invalidateQueries({ queryKey: ["/api/projects", id] });
-      } catch (e) {}
+        pollFailCountRef.current = 0;
+      } catch (e: any) {
+        pollFailCountRef.current++;
+        console.error("[poll-images] error:", e?.message);
+        if (pollFailCountRef.current >= 5) {
+          queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "images"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/projects", id] });
+        }
+      }
     }, 6000);
     return () => clearInterval(interval);
   }, [hasGeneratingImages, id]);
 
+  const videoPollFailRef = useRef(0);
   useEffect(() => {
     if (!hasGeneratingVideos || !id) return;
+    videoPollFailRef.current = 0;
     const interval = setInterval(async () => {
       try {
         await apiRequest("POST", `/api/projects/${id}/poll-videos`);
         queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "images"] });
-      } catch (e) {}
+        videoPollFailRef.current = 0;
+      } catch (e: any) {
+        videoPollFailRef.current++;
+        console.error("[poll-videos] error:", e?.message);
+        if (videoPollFailRef.current >= 5) {
+          queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "images"] });
+        }
+      }
     }, 8000);
     return () => clearInterval(interval);
   }, [hasGeneratingVideos, id]);
@@ -329,14 +361,14 @@ export default function ProjectView() {
     setAnalysisProgress({ step: "reading", detail: "Starting analysis...", current: 0, total: 1 });
 
     try {
-      await apiRequest("POST", `/api/projects/${id}/analyze`);
+      await apiRequest("POST", `/api/projects/${id}/analyze`, { mode: analysisMode });
     } catch (err: any) {
       toast({ title: "Analysis failed", description: err.message, variant: "destructive" });
       setIsAnalyzing(false);
       setAnalysisProgress(null);
       setAnalysisStartTime(null);
     }
-  }, [id, isAnalyzing, toast]);
+  }, [id, isAnalyzing, toast, analysisMode]);
 
   const generateSceneMutation = useMutation({
     mutationFn: async (sceneId: string) => {
@@ -537,9 +569,13 @@ export default function ProjectView() {
   const generateVideoFromImage = useCallback(async (imageId: string, modelOverride?: string) => {
     if (!id) return;
     setVideoGeneratingImageId(imageId);
+    const model = modelOverride || selectedVideoModel;
+    const modelConfig = VIDEO_MODELS.find(m => m.id === model) || VIDEO_MODELS[0];
+    queryClient.setQueryData(
+      ["/api/projects", id, "images"],
+      (old: any[] | undefined) => old ? old.map(img => img.id === imageId ? { ...img, videoStatus: "generating", videoModel: model, videoError: null } : img) : old
+    );
     try {
-      const model = modelOverride || selectedVideoModel;
-      const modelConfig = VIDEO_MODELS.find(m => m.id === model) || VIDEO_MODELS[0];
       const body: any = { videoModel: model };
       if (selectedVideoDuration && model === "kling") {
         body.videoDuration = selectedVideoDuration;
@@ -550,9 +586,12 @@ export default function ProjectView() {
         ["/api/projects", id, "images"],
         (old: any[] | undefined) => old ? old.map(img => img.id === imageId ? updatedImage : img) : old
       );
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "images"] });
       toast({ title: "Creating motion", description: `Video generation started using ${modelConfig.name}.` });
     } catch (err: any) {
+      queryClient.setQueryData(
+        ["/api/projects", id, "images"],
+        (old: any[] | undefined) => old ? old.map(img => img.id === imageId ? { ...img, videoStatus: "failed", videoError: err.message } : img) : old
+      );
       toast({ title: "Video generation failed", description: err.message, variant: "destructive" });
     } finally {
       setVideoGeneratingImageId(null);
@@ -562,9 +601,13 @@ export default function ProjectView() {
   const regenerateVideoWithFeedback = useCallback(async (imageId: string, feedback: string, modelOverride?: string) => {
     if (!id) return;
     setVideoGeneratingImageId(imageId);
+    const model = modelOverride || selectedVideoModel;
+    const modelConfig = VIDEO_MODELS.find(m => m.id === model) || VIDEO_MODELS[0];
+    queryClient.setQueryData(
+      ["/api/projects", id, "images"],
+      (old: any[] | undefined) => old ? old.map(img => img.id === imageId ? { ...img, videoStatus: "generating", videoModel: model, videoError: null } : img) : old
+    );
     try {
-      const model = modelOverride || selectedVideoModel;
-      const modelConfig = VIDEO_MODELS.find(m => m.id === model) || VIDEO_MODELS[0];
       const body: any = { feedback, videoModel: model };
       if (selectedVideoDuration && model === "kling") {
         body.videoDuration = selectedVideoDuration;
@@ -575,9 +618,12 @@ export default function ProjectView() {
         ["/api/projects", id, "images"],
         (old: any[] | undefined) => old ? old.map(img => img.id === imageId ? updatedImage : img) : old
       );
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "images"] });
       toast({ title: "Regenerating motion", description: `Video regeneration with feedback started using ${modelConfig.name}.` });
     } catch (err: any) {
+      queryClient.setQueryData(
+        ["/api/projects", id, "images"],
+        (old: any[] | undefined) => old ? old.map(img => img.id === imageId ? { ...img, videoStatus: "failed", videoError: err.message } : img) : old
+      );
       toast({ title: "Video regeneration failed", description: err.message, variant: "destructive" });
     } finally {
       setVideoGeneratingImageId(null);
@@ -760,9 +806,9 @@ export default function ProjectView() {
           <Skeleton className="h-8 w-64 rounded-xl" />
           <Skeleton className="h-4 w-96 rounded-lg" />
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Skeleton className="h-32 rounded-2xl" />
-            <Skeleton className="h-32 rounded-2xl" />
-            <Skeleton className="h-32 rounded-2xl" />
+            <Skeleton className="h-32 rounded-lg" />
+            <Skeleton className="h-32 rounded-lg" />
+            <Skeleton className="h-32 rounded-lg" />
           </div>
         </div>
       </div>
@@ -777,61 +823,123 @@ export default function ProjectView() {
     );
   }
 
+  const pipelineStep = project.status === "draft" ? 0
+    : (project.status === "analyzing" ? 1
+    : (project.status === "analyzed" ? 2
+    : (project.status === "generating" ? 3
+    : 4)));
+
+  const PIPELINE_STEPS = [
+    { label: "Script", done: pipelineStep > 0 },
+    { label: "Analysis", done: pipelineStep > 1, active: pipelineStep === 1 },
+    { label: "Storyboard", done: pipelineStep > 2, active: pipelineStep === 2 },
+    { label: "Generate", done: pipelineStep > 3, active: pipelineStep === 3 },
+    { label: "Complete", done: pipelineStep >= 4 },
+  ];
+
   return (
-    <div className="min-h-full p-6 md:p-8">
+    <div className="min-h-full p-5 md:p-8">
       <div className="max-w-6xl mx-auto">
         <Link href="/">
-          <Button variant="ghost" className="mb-5 -ml-2 text-muted-foreground hover:text-foreground transition-colors duration-200 rounded-xl" data-testid="button-back">
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            All Projects
-          </Button>
+          <button className="flat-btn-ghost mb-5" data-testid="button-back">
+            <ArrowLeft className="w-4 h-4" />
+            Projects
+          </button>
         </Link>
 
-        <div className="flex flex-row items-start justify-between gap-4 flex-wrap mb-6 glass-card rounded-2xl p-5">
-          <div className="flex items-center gap-3">
-            <div className="icon-box bg-gradient-to-br from-primary/15 to-primary/5 ring-primary/20 w-11 h-11 glow-sm">
-              <Plane className="w-5 h-5 text-primary" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight gradient-text" data-testid="text-project-title">
+        <div className="surface-card rounded-lg p-5 mb-4">
+          <div className="flex flex-row items-start justify-between gap-4 flex-wrap">
+            <div className="min-w-0 flex-1">
+              <h1 className="text-xl font-bold tracking-tight text-[#e5e5e5] truncate" data-testid="text-project-title">
                 {project.title}
               </h1>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                {totalScenes} scenes &middot; {completedImages}/{totalExpected} images generated
+              <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground flex-wrap">
+                <span>{totalScenes} scenes</span>
+                <span className="w-1 h-1 rounded-full bg-muted-foreground/30" />
+                <span>{completedImages}/{totalExpected} images</span>
+                {completedClipsCount > 0 && (
+                  <>
+                    <span className="w-1 h-1 rounded-full bg-muted-foreground/30" />
+                    <span>{completedClipsCount} clips</span>
+                  </>
+                )}
                 {totalSpent > 0 && (
-                  <span className="text-green-400/80" title={`Analysis: ${formatCost(analysisSpent)} | Images: ${formatCost(imagesSpent)} | Videos: ${formatCost(videosSpent)}`}>
-                    {" "}&middot; {formatCost(totalSpent)} spent
-                  </span>
+                  <>
+                    <span className="w-1 h-1 rounded-full bg-muted-foreground/30" />
+                    <span className="text-green-500/80" title={`Analysis: ${formatCost(analysisSpent)} | Images: ${formatCost(imagesSpent)} | Videos: ${formatCost(videosSpent)}`}>
+                      {formatCost(totalSpent)} spent
+                    </span>
+                  </>
                 )}
                 {project.voiceoverUrl && (
-                  <span className="inline-flex items-center gap-1 ml-2 text-blue-400">
-                    <Volume2 className="w-3 h-3" /> Voiceover
-                  </span>
+                  <>
+                    <span className="w-1 h-1 rounded-full bg-muted-foreground/30" />
+                    <span className="inline-flex items-center gap-1 text-blue-400">
+                      <Volume2 className="w-3 h-3" /> Voiceover
+                    </span>
+                  </>
                 )}
-              </p>
+              </div>
+            </div>
+
+            <div className="hidden lg:flex items-center gap-1">
+              {PIPELINE_STEPS.map((step, i) => (
+                <div key={step.label} className="flex items-center gap-1">
+                  <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-medium transition-colors ${
+                    step.active ? "bg-primary/12 text-primary" : step.done ? "bg-green-500/10 text-green-500" : "text-muted-foreground/50"
+                  }`}>
+                    {step.done && <span className="w-1.5 h-1.5 rounded-full bg-green-500" />}
+                    {step.active && <Loader2 className="w-2.5 h-2.5 animate-spin" />}
+                    {step.label}
+                  </div>
+                  {i < PIPELINE_STEPS.length - 1 && (
+                    <div className={`w-4 h-px ${step.done ? "bg-green-500/40" : "bg-muted-foreground/15"}`} />
+                  )}
+                </div>
+              ))}
             </div>
           </div>
+        </div>
+
+        <div className="surface-card rounded-lg p-4 flex flex-wrap items-center gap-2 mb-5">
           <div className="flex items-center gap-2 flex-wrap">
             {project.status === "draft" && (
-              <button
-                onClick={startAnalysis}
-                disabled={isAnalyzing}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold gradient-btn text-white border-0 glow-sm hover:glow-md transition-all duration-300 active:scale-[0.97] disabled:opacity-60"
-                data-testid="button-analyze"
-              >
-                {isAnalyzing ? (
-                  <><Loader2 className="w-4 h-4 animate-spin" />Analyzing...</>
-                ) : (
-                  <><Sparkles className="w-4 h-4" />Analyze Script</>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={startAnalysis}
+                  disabled={isAnalyzing}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold bg-primary text-white border-0 transition-all duration-300 disabled:opacity-60"
+                  data-testid="button-analyze"
+                >
+                  {isAnalyzing ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" />Analyzing...</>
+                  ) : (
+                    <><Sparkles className="w-4 h-4" />Analyze Script</>
+                  )}
+                </button>
+                {!isAnalyzing && (
+                  <button
+                    onClick={() => setAnalysisMode(m => m === "fast" ? "budget" : "fast")}
+                    className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border transition-all duration-200 ${
+                      analysisMode === "fast"
+                        ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
+                        : "border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"
+                    }`}
+                    title={analysisMode === "fast"
+                      ? "Fast mode: streams results in real-time (full price)"
+                      : "Budget mode: uses batch API for 50% cost savings (slower queue)"}
+                  >
+                    {analysisMode === "fast" ? <><Zap className="w-3 h-3" />Fast</> : <><DollarSign className="w-3 h-3" />Budget</>}
+                  </button>
                 )}
-              </button>
+              </div>
             )}
             {project.status !== "draft" && scenes && scenes.length > 0 && (
               <>
                 <button
                   onClick={startAnalysis}
                   disabled={isAnalyzing}
-                  className="ghost-btn disabled:opacity-50"
+                  className="flat-btn-ghost disabled:opacity-50"
                   data-testid="button-reanalyze"
                 >
                   {isAnalyzing ? (
@@ -840,10 +948,25 @@ export default function ProjectView() {
                     <><RefreshCw className="w-4 h-4" />Re-analyze</>
                   )}
                 </button>
+                {!isAnalyzing && (
+                  <button
+                    onClick={() => setAnalysisMode(m => m === "fast" ? "budget" : "fast")}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200 ${
+                      analysisMode === "fast"
+                        ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
+                        : "border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"
+                    }`}
+                    title={analysisMode === "fast"
+                      ? "Fast mode: streams results in real-time (full price)"
+                      : "Budget mode: uses batch API for 50% cost savings (slower queue)"}
+                  >
+                    {analysisMode === "fast" ? <><Zap className="w-3 h-3" />Fast</> : <><DollarSign className="w-3 h-3" />Budget</>}
+                  </button>
+                )}
                 <button
                   onClick={() => generateAllMutation.mutate()}
                   disabled={generateAllMutation.isPending || isGenerating || !charRefsReady}
-                  className="inline-flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold gradient-btn text-white border-0 glow-sm hover:glow-md transition-all duration-300 active:scale-[0.97] disabled:opacity-60"
+                  className="inline-flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold bg-primary text-white border-0 transition-all duration-300 disabled:opacity-60"
                   data-testid="button-generate-all"
                   title={!charRefsReady ? `Generate character portraits first (${completedCharRefs}/${expectedCharRefs} done)` : `Estimated cost: ${formatCost(imageGenCost)} for ${Math.max(0, remainingImages)} images`}
                 >
@@ -859,7 +982,7 @@ export default function ProjectView() {
                   <button
                     onClick={() => setShowRegenAllConfirm(true)}
                     disabled={generateAllMutation.isPending || isGenerating}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-all duration-300 active:scale-[0.97] disabled:opacity-60"
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-60"
                     title={`Delete all ${completedImages} completed images and regenerate from scratch — estimated cost: ${formatCost(totalExpected * currentImageModel.costPerImage)}`}
                   >
                     <RotateCcw className="w-4 h-4" />Regenerate All Images
@@ -869,7 +992,7 @@ export default function ProjectView() {
                   <button
                     onClick={() => retryFailedMutation.mutate()}
                     disabled={retryFailedMutation.isPending || isGenerating}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 hover:bg-yellow-500/20 transition-all duration-300 active:scale-[0.97] disabled:opacity-60"
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 hover:bg-yellow-500/20 transition-all duration-300 disabled:opacity-60"
                     title={`Re-submit ${retryableCount} failed/pending images using existing prompts — estimated cost: ${formatCost(retryableCount * currentImageModel.costPerImage)}`}
                   >
                     {retryFailedMutation.isPending ? (
@@ -894,7 +1017,7 @@ export default function ProjectView() {
                       }
                     }}
                     disabled={smartRegenerateMutation.isPending || isSmartRegenerating}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-orange-500/10 border border-orange-500/20 text-orange-400 hover:bg-orange-500/20 transition-all duration-300 active:scale-[0.97] disabled:opacity-60"
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-orange-500/10 border border-orange-500/20 text-orange-400 hover:bg-orange-500/20 transition-all duration-300 disabled:opacity-60"
                     title={`AI will analyze ${failedImageCount} failed images, diagnose prompt issues, and regenerate with improved prompts`}
                   >
                     {smartRegenerateMutation.isPending || isSmartRegenerating ? (
@@ -908,7 +1031,7 @@ export default function ProjectView() {
                   <button
                     onClick={generateAllVideos}
                     disabled={isGeneratingAllVideos}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-purple-500/10 border border-purple-500/20 text-purple-400 hover:bg-purple-500/20 transition-all duration-300 active:scale-[0.97] disabled:opacity-60"
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-purple-500/10 border border-purple-500/20 text-purple-400 hover:bg-purple-500/20 transition-all duration-300 disabled:opacity-60"
                     title={`Generate videos for ${videoEligibleCount} images using ${currentVideoModel.name} — estimated cost: ${formatCost(videoEligibleCost)}`}
                   >
                     <Video className="w-4 h-4" />Generate All Videos ({videoEligibleCount}) ~{formatCost(videoEligibleCost)}
@@ -925,11 +1048,11 @@ export default function ProjectView() {
                 {(completedImages > 0 || project.analysis) && (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <button className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/20 transition-all duration-300 active:scale-[0.97]">
+                      <button className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/20 transition-all duration-300">
                         <Download className="w-4 h-4" />Download / Export
                       </button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-64 glass-surface border border-white/10">
+                    <DropdownMenuContent align="end" className="w-64 border border-white/10">
                       {project.analysis && (
                         <DropdownMenuItem
                           onClick={handleExportStoryBible}
@@ -988,7 +1111,7 @@ export default function ProjectView() {
         </div>
 
         {project.voiceoverUrl && (
-          <Card className="mb-4 glass-card rounded-2xl p-4">
+          <Card className="mb-4 rounded-lg p-4">
             <div className="flex items-center gap-3">
               <button
                 onClick={() => {
@@ -1000,7 +1123,7 @@ export default function ProjectView() {
                   }
                   setVoiceoverPlaying(!voiceoverPlaying);
                 }}
-                className="w-10 h-10 rounded-full gradient-btn flex items-center justify-center shrink-0 glow-sm hover:glow-md transition-all active:scale-95"
+                className="w-10 h-10 rounded-full bg-primary flex items-center justify-center shrink-0 transition-all"
               >
                 {voiceoverPlaying ? <Pause className="w-4 h-4 text-white" /> : <Play className="w-4 h-4 text-white ml-0.5" />}
               </button>
@@ -1024,12 +1147,12 @@ export default function ProjectView() {
         )}
 
         {showExportDialog && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center" onClick={() => !isExporting && setShowExportDialog(false)}>
-            <Card className="w-full max-w-sm mx-4 p-6 glass-card rounded-2xl animate-scale-in" onClick={(e) => e.stopPropagation()} data-testid="dialog-export">
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center" onClick={() => !isExporting && setShowExportDialog(false)}>
+            <Card className="w-full max-w-sm mx-4 p-6 rounded-lg animate-scale-in" onClick={(e) => e.stopPropagation()} data-testid="dialog-export">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold">Export Storyboard PDF</h3>
                 {!isExporting && (
-                  <button onClick={() => setShowExportDialog(false)} className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-lg hover:bg-[var(--glass-highlight)]">
+                  <button onClick={() => setShowExportDialog(false)} className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-lg hover:bg-[rgba(255,255,255,0.05)]">
                     <X className="w-5 h-5" />
                   </button>
                 )}
@@ -1041,7 +1164,7 @@ export default function ProjectView() {
                 <button
                   onClick={() => setShowExportDialog(false)}
                   disabled={isExporting}
-                  className="flex-1 ghost-btn justify-center"
+                  className="flex-1 flat-btn-ghost justify-center"
                   data-testid="button-export-cancel"
                 >
                   Cancel
@@ -1049,7 +1172,7 @@ export default function ProjectView() {
                 <button
                   onClick={handleExport}
                   disabled={isExporting}
-                  className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold gradient-btn text-white border-0 transition-all duration-300 disabled:opacity-60"
+                  className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-primary text-white border-0 transition-all duration-300 disabled:opacity-60"
                   data-testid="button-export-download"
                 >
                   {isExporting ? (
@@ -1064,11 +1187,11 @@ export default function ProjectView() {
         )}
 
         {showRegenAllConfirm && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center" onClick={() => setShowRegenAllConfirm(false)}>
-            <Card className="w-full max-w-sm mx-4 p-6 glass-card rounded-2xl animate-scale-in" onClick={(e) => e.stopPropagation()}>
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center" onClick={() => setShowRegenAllConfirm(false)}>
+            <Card className="w-full max-w-sm mx-4 p-6 rounded-lg animate-scale-in" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold text-red-400">Regenerate All Images</h3>
-                <button onClick={() => setShowRegenAllConfirm(false)} className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-lg hover:bg-[var(--glass-highlight)]">
+                <button onClick={() => setShowRegenAllConfirm(false)} className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-lg hover:bg-[rgba(255,255,255,0.05)]">
                   <X className="w-5 h-5" />
                 </button>
               </div>
@@ -1081,7 +1204,7 @@ export default function ProjectView() {
               <div className="flex gap-3">
                 <button
                   onClick={() => setShowRegenAllConfirm(false)}
-                  className="flex-1 ghost-btn justify-center"
+                  className="flex-1 flat-btn-ghost justify-center"
                 >
                   Cancel
                 </button>
@@ -1100,11 +1223,11 @@ export default function ProjectView() {
         )}
 
         {isAnalyzing && analysisProgress && (
-          <Card className="mb-6 p-4 glass-card rounded-2xl border-primary/10" data-testid="card-analysis-progress">
+          <Card className="mb-6 p-4 rounded-lg border-primary/10" data-testid="card-analysis-progress">
             <div className="flex items-center gap-3 mb-3">
               <div className="relative">
                 <div className="absolute inset-0 rounded-full bg-primary/20 animate-ping" />
-                <div className="relative w-8 h-8 rounded-full gradient-btn flex items-center justify-center">
+                <div className="relative w-8 h-8 rounded-full bg-primary flex items-center justify-center">
                   <Loader2 className="w-4 h-4 animate-spin text-white" />
                 </div>
               </div>
@@ -1132,7 +1255,7 @@ export default function ProjectView() {
         )}
 
         {(isGenerating || genProgress) && genProgress && (
-          <Card className={`mb-6 p-5 glass-card rounded-2xl ${genProgress.status === "error" ? "border-red-500/20" : genProgress.status === "complete" ? "border-green-500/15" : "border-primary/15"}`}>
+          <Card className={`mb-6 p-5 rounded-lg ${genProgress.status === "error" ? "border-red-500/20" : genProgress.status === "complete" ? "border-green-500/15" : "border-primary/15"}`}>
             <div className="flex items-center gap-3 mb-4">
               {genProgress.status === "error" ? (
                 <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center ring-1 ring-red-500/20">
@@ -1145,7 +1268,7 @@ export default function ProjectView() {
               ) : (
                 <div className="relative">
                   <div className="absolute inset-0 rounded-xl bg-primary/20 animate-ping" />
-                  <div className="relative w-10 h-10 rounded-xl gradient-btn flex items-center justify-center">
+                  <div className="relative w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
                     <Loader2 className="w-5 h-5 animate-spin text-white" />
                   </div>
                 </div>
@@ -1171,22 +1294,22 @@ export default function ProjectView() {
             </div>
 
             <div className="grid grid-cols-4 gap-2 mb-3">
-              <div className="glass-surface rounded-xl p-3 border border-[var(--glass-border)] text-center">
+              <div className="rounded-xl p-3 border border-[#1a1a1a] text-center">
                 <p className="text-lg font-bold tabular-nums">{genProgress.totalImages}</p>
                 <p className="text-[10px] text-muted-foreground font-medium">Total</p>
               </div>
-              <div className="glass-surface rounded-xl p-3 border border-blue-500/15 text-center">
+              <div className="rounded-xl p-3 border border-blue-500/15 text-center">
                 <p className="text-lg font-bold tabular-nums text-blue-400">{genProgress.submitted}</p>
                 <p className="text-[10px] text-blue-400/60 font-medium">Queued</p>
               </div>
-              <div className="glass-surface rounded-xl p-3 border border-green-500/15 text-center relative overflow-hidden">
+              <div className="rounded-xl p-3 border border-green-500/15 text-center relative overflow-hidden">
                 {genProgress.status === "polling" && genProgress.completed > 0 && (
                   <div className="absolute inset-0 bg-green-500/5 animate-pulse" />
                 )}
                 <p className="text-lg font-bold tabular-nums text-green-400 relative">{genProgress.completed}</p>
                 <p className="text-[10px] text-green-400/60 font-medium relative">Done</p>
               </div>
-              <div className="glass-surface rounded-xl p-3 border border-red-500/15 text-center">
+              <div className="rounded-xl p-3 border border-red-500/15 text-center">
                 <p className="text-lg font-bold tabular-nums text-red-400">{genProgress.failed}</p>
                 <p className="text-[10px] text-red-400/60 font-medium">Failed</p>
               </div>
@@ -1244,18 +1367,18 @@ export default function ProjectView() {
 
         {project?.status !== "draft" && (
           <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="glass-card rounded-2xl overflow-hidden">
+            <div className="rounded-lg overflow-hidden">
               <button
                 onClick={() => setShowImageModelPicker(!showImageModelPicker)}
                 className="w-full p-3.5 flex items-center gap-3 hover:bg-white/[0.02] transition-colors"
               >
-                <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${TIER_COLORS[currentImageModel.tier].bg} flex items-center justify-center`}>
+                <div className={`w-8 h-8 rounded-lg ${TIER_COLORS[currentImageModel.tier].bg} flex items-center justify-center`}>
                   {currentImageModel.tier === "premium" ? <Crown className={`w-4 h-4 ${TIER_COLORS[currentImageModel.tier].text}`} /> : <ImageIcon className={`w-4 h-4 ${TIER_COLORS[currentImageModel.tier].text}`} />}
                 </div>
                 <div className="flex-1 min-w-0 text-left">
                   <div className="flex items-center gap-2">
                     <p className="text-sm font-semibold">{currentImageModel.name}</p>
-                    <span className={`text-[10px] font-medium ${TIER_COLORS[currentImageModel.tier].text} px-1.5 py-0.5 rounded-md bg-gradient-to-br ${TIER_COLORS[currentImageModel.tier].bg}`}>{TIER_COLORS[currentImageModel.tier].label}</span>
+                    <span className={`text-[10px] font-medium ${TIER_COLORS[currentImageModel.tier].text} px-1.5 py-0.5 rounded-md ${TIER_COLORS[currentImageModel.tier].bg}`}>{TIER_COLORS[currentImageModel.tier].label}</span>
                   </div>
                   <p className="text-[11px] text-muted-foreground">{formatCost(currentImageModel.costPerImage)}/image · {currentImageModel.resolution} · {currentImageModel.maxRefImages} refs</p>
                 </div>
@@ -1270,12 +1393,12 @@ export default function ProjectView() {
                       <div
                         key={model.id}
                         className={`p-3 rounded-xl cursor-pointer transition-all duration-200 ${
-                          isSelected ? `glass-surface border ${tier.border}` : "hover:bg-white/[0.03] border border-transparent"
+                          isSelected ? `border ${tier.border}` : "hover:bg-white/[0.03] border border-transparent"
                         }`}
                         onClick={() => { setSelectedImageModel(model.id); setShowImageModelPicker(false); }}
                       >
                         <div className="flex items-center gap-2.5">
-                          <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${tier.bg} flex items-center justify-center flex-shrink-0`}>
+                          <div className={`w-7 h-7 rounded-lg ${tier.bg} flex items-center justify-center flex-shrink-0`}>
                             {model.tier === "premium" ? <Crown className={`w-3.5 h-3.5 ${tier.text}`} /> : <ImageIcon className={`w-3.5 h-3.5 ${tier.text}`} />}
                           </div>
                           <div className="flex-1 min-w-0">
@@ -1298,18 +1421,18 @@ export default function ProjectView() {
               )}
             </div>
 
-            <div className="glass-card rounded-2xl overflow-hidden">
+            <div className="rounded-lg overflow-hidden">
               <button
                 onClick={() => setShowVideoModelPicker(!showVideoModelPicker)}
                 className="w-full p-3.5 flex items-center gap-3 hover:bg-white/[0.02] transition-colors"
               >
-                <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${TIER_COLORS[currentVideoModel.tier].bg} flex items-center justify-center`}>
+                <div className={`w-8 h-8 rounded-lg ${TIER_COLORS[currentVideoModel.tier].bg} flex items-center justify-center`}>
                   {currentVideoModel.tier === "premium" ? <Crown className={`w-4 h-4 ${TIER_COLORS[currentVideoModel.tier].text}`} /> : currentVideoModel.tier === "budget" ? <Zap className={`w-4 h-4 ${TIER_COLORS[currentVideoModel.tier].text}`} /> : <Star className={`w-4 h-4 ${TIER_COLORS[currentVideoModel.tier].text}`} />}
                 </div>
                 <div className="flex-1 min-w-0 text-left">
                   <div className="flex items-center gap-2">
                     <p className="text-sm font-semibold">{currentVideoModel.name}</p>
-                    <span className={`text-[10px] font-medium ${TIER_COLORS[currentVideoModel.tier].text} px-1.5 py-0.5 rounded-md bg-gradient-to-br ${TIER_COLORS[currentVideoModel.tier].bg}`}>{TIER_COLORS[currentVideoModel.tier].label}</span>
+                    <span className={`text-[10px] font-medium ${TIER_COLORS[currentVideoModel.tier].text} px-1.5 py-0.5 rounded-md ${TIER_COLORS[currentVideoModel.tier].bg}`}>{TIER_COLORS[currentVideoModel.tier].label}</span>
                   </div>
                   <p className="text-[11px] text-muted-foreground">{formatCost(currentVideoModel.costPerClip)}/clip · {currentVideoModel.duration}s · {currentVideoModel.quality}</p>
                 </div>
@@ -1324,12 +1447,12 @@ export default function ProjectView() {
                       <div
                         key={model.id}
                         className={`p-3 rounded-xl cursor-pointer transition-all duration-200 ${
-                          isSelected ? `glass-surface border ${tier.border}` : "hover:bg-white/[0.03] border border-transparent"
+                          isSelected ? `border ${tier.border}` : "hover:bg-white/[0.03] border border-transparent"
                         }`}
                         onClick={() => { setSelectedVideoModel(model.id); if (model.id !== "kling") setSelectedVideoDuration(null); setShowVideoModelPicker(false); }}
                       >
                         <div className="flex items-center gap-2.5">
-                          <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${tier.bg} flex items-center justify-center flex-shrink-0`}>
+                          <div className={`w-7 h-7 rounded-lg ${tier.bg} flex items-center justify-center flex-shrink-0`}>
                             {model.tier === "premium" ? <Crown className={`w-3.5 h-3.5 ${tier.text}`} /> : model.tier === "budget" ? <Zap className={`w-3.5 h-3.5 ${tier.text}`} /> : <Star className={`w-3.5 h-3.5 ${tier.text}`} />}
                           </div>
                           <div className="flex-1 min-w-0">
@@ -1373,36 +1496,36 @@ export default function ProjectView() {
         )}
 
         {totalScenes > 0 && (
-          <Card className="mb-6 p-4 glass-card rounded-2xl">
+          <Card className="mb-6 p-4 rounded-lg">
             <div className="flex items-center gap-2 mb-3">
-              <div className="icon-box bg-gradient-to-br from-green-500/10 to-emerald-500/5 ring-green-500/15 w-6 h-6 rounded-lg">
+              <div className="icon-box bg-green-500/10 ring-green-500/15 w-6 h-6 rounded-lg">
                 <DollarSign className="w-3.5 h-3.5 text-green-500" />
               </div>
               <h3 className="text-sm font-semibold">Estimated API Cost</h3>
               <span className="text-[10px] text-muted-foreground ml-auto font-medium tracking-wide">via EvoLink.AI</span>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
-              <div className="glass-surface rounded-xl p-3 border border-[var(--glass-border)]">
+              <div className="rounded-xl p-3 border border-[#1a1a1a]">
                 <p className="text-muted-foreground text-xs mb-1">Analysis ({totalScenes} scenes)</p>
                 <p className="font-semibold">{formatCost(analysisCost)}</p>
                 <p className="text-[10px] text-muted-foreground mt-0.5">Claude Opus 4.6</p>
               </div>
-              <div className="glass-surface rounded-xl p-3 border border-[var(--glass-border)]">
+              <div className="rounded-xl p-3 border border-[#1a1a1a]">
                 <p className="text-muted-foreground text-xs mb-1">Images ({totalExpected})</p>
                 <p className="font-semibold">{formatCost(totalImageCost)}</p>
                 <p className="text-[10px] text-muted-foreground mt-0.5">{formatCost(currentImageModel.costPerImage)}/image &middot; {currentImageModel.name}</p>
               </div>
-              <div className="glass-surface rounded-xl p-3 border border-[var(--glass-border)]">
+              <div className="rounded-xl p-3 border border-[#1a1a1a]">
                 <p className="text-muted-foreground text-xs mb-1">Video Clips ({totalExpected})</p>
                 <p className="font-semibold">{formatCost(totalVideoCost)}</p>
                 <p className="text-[10px] text-muted-foreground mt-0.5">{formatCost(currentVideoModel.costPerClip)}/clip &middot; {currentVideoModel.duration}s &middot; {currentVideoModel.name}</p>
               </div>
-              <div className="glass-surface rounded-xl p-3 border border-primary/15 bg-primary/[0.03]">
+              <div className="rounded-xl p-3 border border-primary/15 bg-primary/[0.03]">
                 <p className="text-muted-foreground text-xs mb-1">Full Project Total</p>
                 <p className="font-bold text-primary">{formatCost(totalProjectCost)}</p>
                 <p className="text-[10px] text-muted-foreground mt-0.5">analysis + images + clips</p>
               </div>
-              <div className="glass-surface rounded-xl p-3 border border-green-500/10 bg-green-500/[0.02]">
+              <div className="rounded-xl p-3 border border-green-500/10 bg-green-500/[0.02]">
                 <p className="text-muted-foreground text-xs mb-1">Spent So Far</p>
                 <p className="font-bold text-green-500">{formatCost(totalSpent)}</p>
                 <div className="text-[10px] text-muted-foreground mt-1 space-y-0.5">
@@ -1431,33 +1554,47 @@ export default function ProjectView() {
           </Card>
         )}
 
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="mb-6 glass-card rounded-2xl p-1.5 h-auto">
-            <TabsTrigger value="analysis" className="data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-xl transition-all duration-200 py-2 px-4" data-testid="tab-analysis">
-              <Eye className="w-4 h-4 mr-2" />
-              Story Bible
-            </TabsTrigger>
-            <TabsTrigger value="storyboard" className="data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-xl transition-all duration-200 py-2 px-4" data-testid="tab-storyboard">
-              <Film className="w-4 h-4 mr-2" />
-              Storyboard ({totalScenes})
-            </TabsTrigger>
-            <TabsTrigger value="gallery" className="data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-xl transition-all duration-200 py-2 px-4" data-testid="tab-gallery">
-              <Image className="w-4 h-4 mr-2" />
-              Gallery ({completedImages})
-            </TabsTrigger>
-            <TabsTrigger value="clips" className="data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-xl transition-all duration-200 py-2 px-4" data-testid="tab-clips">
-              <Video className="w-4 h-4 mr-2" />
-              Clips ({images?.filter(img => img.videoStatus === "completed" && img.videoUrl).length || 0})
-            </TabsTrigger>
-          </TabsList>
+        <div className="flex gap-0 -mx-5 md:-mx-8" style={{ minHeight: 'calc(100vh - 20rem)' }}>
+          {/* Left Sidebar */}
+          <div className="w-[200px] shrink-0 surface-sidebar sticky top-12 self-start pl-5 md:pl-8 py-4">
+            <nav className="space-y-1">
+              {[
+                { id: "analysis", label: "Story Bible", icon: "Eye" },
+                { id: "storyboard", label: "Storyboard", icon: "Film", count: totalScenes > 0 ? totalScenes : undefined },
+                { id: "gallery", label: "Gallery", icon: "Image", count: completedImages > 0 ? completedImages : undefined },
+                { id: "clips", label: "Clips", icon: "Video", count: (images?.filter(img => img.videoStatus === "completed" && img.videoUrl).length || 0) > 0 ? images?.filter(img => img.videoStatus === "completed" && img.videoUrl).length : undefined },
+                { id: "downloads", label: "Downloads", icon: "Download" },
+              ].map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveTab(item.id)}
+                  className={`sidebar-item w-full ${activeTab === item.id ? "sidebar-item-active" : ""}`}
+                  data-testid={`tab-${item.id}`}
+                >
+                  {item.id === "analysis" && <Eye className="w-4 h-4" />}
+                  {item.id === "storyboard" && <Film className="w-4 h-4" />}
+                  {item.id === "gallery" && <Image className="w-4 h-4" />}
+                  {item.id === "clips" && <Video className="w-4 h-4" />}
+                  {item.id === "downloads" && <Download className="w-4 h-4" />}
+                  <span className="flex-1 text-left">{item.label}</span>
+                  {item.count !== undefined && (
+                    <span className="text-[10px] tabular-nums opacity-50">{item.count}</span>
+                  )}
+                </button>
+              ))}
+            </nav>
+          </div>
 
-          <TabsContent value="analysis">
+          {/* Main Content */}
+          <div className="flex-1 min-w-0 pr-5 md:pr-8 py-4 pl-6">
+            {activeTab === "analysis" && (
+            <>
             {isAnalyzing && analysisProgress ? (
               <div className="space-y-6">
-                <Card className="p-8 flex flex-col items-center justify-center glass-card rounded-2xl">
+                <Card className="p-8 flex flex-col items-center justify-center rounded-lg">
                   <div className="relative mb-4">
                     <div className="absolute inset-0 rounded-full bg-primary/20 animate-ping" />
-                    <div className="relative w-14 h-14 rounded-full gradient-btn flex items-center justify-center glow-md">
+                    <div className="relative w-14 h-14 rounded-full bg-primary flex items-center justify-center">
                       <Loader2 className="w-7 h-7 text-white animate-spin" />
                     </div>
                   </div>
@@ -1490,33 +1627,50 @@ export default function ProjectView() {
                 {analysis && <AnalysisView analysis={analysis} projectId={id} selectedImageModel={selectedImageModel} />}
               </div>
             ) : !analysis ? (
-              <Card className="p-8 flex flex-col items-center justify-center glass-card rounded-2xl">
-                <div className="w-14 h-14 rounded-2xl glass-card flex items-center justify-center mb-4 animate-float">
+              <Card className="p-8 flex flex-col items-center justify-center rounded-lg">
+                <div className="w-14 h-14 rounded-lg flex items-center justify-center mb-4 animate-float">
                   <Sparkles className="w-7 h-7 text-muted-foreground" />
                 </div>
                 <h3 className="font-semibold mb-1">Script not analyzed yet</h3>
                 <p className="text-sm text-muted-foreground text-center max-w-sm mb-5 leading-relaxed">
                   Click "Analyze Script" to have AI read your complete story, understand the narrative, and create a visual storyboard.
                 </p>
-                <button
-                  onClick={startAnalysis}
-                  disabled={isAnalyzing}
-                  className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold gradient-btn text-white border-0 glow-sm hover:glow-md transition-all duration-300 active:scale-[0.97]"
-                  data-testid="button-analyze-empty"
-                >
-                  <Sparkles className="w-4 h-4" />Analyze Script
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={startAnalysis}
+                    disabled={isAnalyzing}
+                    className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold bg-primary text-white border-0 transition-all duration-300"
+                    data-testid="button-analyze-empty"
+                  >
+                    <Sparkles className="w-4 h-4" />Analyze Script
+                  </button>
+                  <button
+                    onClick={() => setAnalysisMode(m => m === "fast" ? "budget" : "fast")}
+                    className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border transition-all duration-200 ${
+                      analysisMode === "fast"
+                        ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
+                        : "border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"
+                    }`}
+                    title={analysisMode === "fast"
+                      ? "Fast mode: streams results in real-time (full price)"
+                      : "Budget mode: uses batch API for 50% cost savings (slower queue)"}
+                  >
+                    {analysisMode === "fast" ? <><Zap className="w-3 h-3" />Fast</> : <><DollarSign className="w-3 h-3" />Budget</>}
+                  </button>
+                </div>
               </Card>
             ) : (
               <AnalysisView analysis={analysis} projectId={id} selectedImageModel={selectedImageModel} />
             )}
-          </TabsContent>
+            </>
+            )}
 
-          <TabsContent value="storyboard">
+            {activeTab === "storyboard" && (
+            <>
             {scenesLoading ? (
               <div className="space-y-3">
                 {[1, 2, 3].map((i) => (
-                  <Card key={i} className="p-5 glass-card rounded-2xl">
+                  <Card key={i} className="p-5 rounded-lg">
                     <Skeleton className="h-5 w-full mb-3 rounded-lg" />
                     <Skeleton className="h-4 w-3/4 rounded-lg" />
                   </Card>
@@ -1525,7 +1679,7 @@ export default function ProjectView() {
             ) : scenes && scenes.length > 0 ? (
               <>
                 {isAnalyzing && analysisProgress && (
-                  <Card className="mb-4 p-4 glass-card rounded-2xl border-blue-500/15">
+                  <Card className="mb-4 p-4 rounded-lg border-blue-500/15">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-blue-500/10 flex items-center justify-center ring-1 ring-blue-500/20">
                         <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
@@ -1538,7 +1692,7 @@ export default function ProjectView() {
                   </Card>
                 )}
                 {showSmartRegenPicker && !isSmartRegenerating && scenes.length > 0 && (
-                  <Card className="mb-4 p-4 glass-card rounded-2xl border-orange-500/15 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <Card className="mb-4 p-4 rounded-lg border-orange-500/15 animate-in fade-in slide-in-from-top-2 duration-200">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
                         <RefreshCw className="w-4 h-4 text-orange-400" />
@@ -1609,7 +1763,7 @@ export default function ProjectView() {
                       <div className="flex gap-2">
                         <button
                           onClick={() => { setShowSmartRegenPicker(false); setSmartRegenSelectedScenes(new Set()); }}
-                          className="ghost-btn text-xs px-3 py-1.5"
+                          className="flat-btn-ghost text-xs px-3 py-1.5"
                         >
                           Cancel
                         </button>
@@ -1630,7 +1784,7 @@ export default function ProjectView() {
                   </Card>
                 )}
                 {isSmartRegenerating && smartRegenProgress && smartRegenProgress.status !== "idle" && (
-                  <Card className="mb-4 p-4 glass-card rounded-2xl border-orange-500/15">
+                  <Card className="mb-4 p-4 rounded-lg border-orange-500/15">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-orange-500/10 flex items-center justify-center ring-1 ring-orange-500/20">
                         {smartRegenProgress.status === "complete" ? (
@@ -1654,7 +1808,7 @@ export default function ProjectView() {
                       )}
                     </div>
                     {smartRegenProgress.total > 0 && (
-                      <div className="mt-3 h-1.5 rounded-full bg-[var(--glass-border)] overflow-hidden">
+                      <div className="mt-3 h-1.5 rounded-full bg-[#1a1a1a] overflow-hidden">
                         <div
                           className={`h-full rounded-full transition-all duration-500 ${
                             smartRegenProgress.status === "complete"
@@ -1695,10 +1849,10 @@ export default function ProjectView() {
                 />
               </>
             ) : isAnalyzing ? (
-              <Card className="p-8 flex flex-col items-center justify-center glass-card rounded-2xl">
+              <Card className="p-8 flex flex-col items-center justify-center rounded-lg">
                 <div className="relative mb-4">
                   <div className="absolute inset-0 rounded-full bg-primary/20 animate-ping" />
-                  <div className="relative w-12 h-12 rounded-full gradient-btn flex items-center justify-center">
+                  <div className="relative w-12 h-12 rounded-full bg-primary flex items-center justify-center">
                     <Loader2 className="w-6 h-6 text-white animate-spin" />
                   </div>
                 </div>
@@ -1706,17 +1860,19 @@ export default function ProjectView() {
                 <p className="text-sm text-muted-foreground">Scenes will appear here as the AI creates them.</p>
               </Card>
             ) : (
-              <Card className="p-8 flex flex-col items-center justify-center glass-card rounded-2xl">
-                <div className="w-14 h-14 rounded-2xl glass-card flex items-center justify-center mb-4 animate-float">
+              <Card className="p-8 flex flex-col items-center justify-center rounded-lg">
+                <div className="w-14 h-14 rounded-lg flex items-center justify-center mb-4 animate-float">
                   <Film className="w-7 h-7 text-muted-foreground" />
                 </div>
                 <h3 className="font-semibold mb-1">No storyboard yet</h3>
                 <p className="text-sm text-muted-foreground">Analyze the script first to create a visual storyboard.</p>
               </Card>
             )}
-          </TabsContent>
+            </>
+            )}
 
-          <TabsContent value="gallery">
+            {activeTab === "gallery" && (
+            <>
             <GalleryView
               images={images || []}
               scenes={scenes || []}
@@ -1729,9 +1885,11 @@ export default function ProjectView() {
               selectedVideoModel={selectedVideoModel}
               costPerImage={currentImageModel.costPerImage}
             />
-          </TabsContent>
+            </>
+            )}
 
-          <TabsContent value="clips">
+            {activeTab === "clips" && (
+            <>
             <ClipsView
               projectId={id!}
               images={images || []}
@@ -1741,8 +1899,98 @@ export default function ProjectView() {
               selectedVideoModel={selectedVideoModel}
               onRemoveVideo={removeVideo}
             />
-          </TabsContent>
-        </Tabs>
+            </>
+            )}
+
+            {activeTab === "downloads" && (
+              <div className="space-y-4">
+                <h2 className="text-lg font-semibold text-[#e5e5e5]">Downloads & Export</h2>
+                <p className="text-sm text-[#737373] mb-6">Download your project assets in various formats.</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {project.analysis && (
+                    <button
+                      onClick={async () => {
+                        try {
+                          const headers = getApiHeaders();
+                          const res = await fetch(`/api/projects/${id}/export-story-bible`, { method: "POST", headers });
+                          if (!res.ok) throw new Error("Failed to export");
+                          const blob = await res.blob();
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement("a");
+                          a.href = url; a.download = `story-bible-${project.title}.pdf`; a.click();
+                          URL.revokeObjectURL(url);
+                        } catch (err: any) {
+                          toast({ title: "Export failed", description: err.message, variant: "destructive" });
+                        }
+                      }}
+                      className="surface-card rounded-lg p-4 text-left hover:border-[#262626] transition-colors"
+                    >
+                      <div className="flex items-center gap-3 mb-2">
+                        <BookOpen className="w-5 h-5 text-[#737373]" />
+                        <span className="text-sm font-medium text-[#e5e5e5]">Story Bible PDF</span>
+                      </div>
+                      <p className="text-xs text-[#737373]">Analysis, characters, locations, and story elements</p>
+                    </button>
+                  )}
+                  {completedImages > 0 && (
+                    <button
+                      onClick={() => setShowExportDialog(true)}
+                      className="surface-card rounded-lg p-4 text-left hover:border-[#262626] transition-colors"
+                    >
+                      <div className="flex items-center gap-3 mb-2">
+                        <FileDown className="w-5 h-5 text-[#737373]" />
+                        <span className="text-sm font-medium text-[#e5e5e5]">Storyboard PDF</span>
+                      </div>
+                      <p className="text-xs text-[#737373]">Visual storyboard with all scenes and images</p>
+                    </button>
+                  )}
+                  {completedImages > 0 && (
+                    <button
+                      onClick={() => window.open(`/api/projects/${id}/download?type=images`, "_blank")}
+                      className="surface-card rounded-lg p-4 text-left hover:border-[#262626] transition-colors"
+                    >
+                      <div className="flex items-center gap-3 mb-2">
+                        <Image className="w-5 h-5 text-[#737373]" />
+                        <span className="text-sm font-medium text-[#e5e5e5]">All Images ({completedImages})</span>
+                      </div>
+                      <p className="text-xs text-[#737373]">Download all generated images as a zip</p>
+                    </button>
+                  )}
+                  {completedClipsCount > 0 && (
+                    <button
+                      onClick={() => window.open(`/api/projects/${id}/download?type=clips`, "_blank")}
+                      className="surface-card rounded-lg p-4 text-left hover:border-[#262626] transition-colors"
+                    >
+                      <div className="flex items-center gap-3 mb-2">
+                        <Video className="w-5 h-5 text-[#737373]" />
+                        <span className="text-sm font-medium text-[#e5e5e5]">All Clips ({completedClipsCount})</span>
+                      </div>
+                      <p className="text-xs text-[#737373]">Download all video clips as a zip</p>
+                    </button>
+                  )}
+                  {completedImages > 0 && completedClipsCount > 0 && (
+                    <button
+                      onClick={() => window.open(`/api/projects/${id}/download?type=all`, "_blank")}
+                      className="surface-card rounded-lg p-4 text-left hover:border-[#262626] transition-colors"
+                    >
+                      <div className="flex items-center gap-3 mb-2">
+                        <Layers className="w-5 h-5 text-[#737373]" />
+                        <span className="text-sm font-medium text-[#e5e5e5]">All Images + Clips ({completedImages + completedClipsCount})</span>
+                      </div>
+                      <p className="text-xs text-[#737373]">Download everything in one zip file</p>
+                    </button>
+                  )}
+                </div>
+                {!project.analysis && completedImages === 0 && completedClipsCount === 0 && (
+                  <div className="text-center py-12">
+                    <Download className="w-8 h-8 text-[#525252] mx-auto mb-3" />
+                    <p className="text-sm text-[#737373]">No assets to download yet. Analyze your script and generate images first.</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1758,7 +2006,7 @@ function PortraitLightbox({ imageUrl, characterName, angle, onClose }: { imageUr
   const angleLabels: Record<string, string> = { front: "Front View", "three-quarter": "Three-Quarter View", profile: "Side Profile" };
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-md flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4" onClick={onClose}>
       <div className="relative max-w-5xl max-h-[90vh] w-full" onClick={e => e.stopPropagation()}>
         <button onClick={onClose} className="absolute -top-10 right-0 text-white/70 hover:text-white transition-colors p-1">
           <X className="w-6 h-6" />
@@ -1777,15 +2025,104 @@ function PortraitLightbox({ imageUrl, characterName, angle, onClose }: { imageUr
   );
 }
 
+function syncCharacterReferencesCache(projectId: string, refs: any[]) {
+  queryClient.setQueryData(["/api/projects", projectId, "character-references"], refs);
+}
+
 function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: ScriptAnalysis; projectId: string; selectedImageModel: string }) {
   const { toast } = useToast();
   const [charRefs, setCharRefs] = useState<any[]>([]);
   const [isGeneratingRefs, setIsGeneratingRefs] = useState(false);
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
+  const [regeneratingCharName, setRegeneratingCharName] = useState<string | null>(null);
   const [feedbackRefId, setFeedbackRefId] = useState<string | null>(null);
   const [feedbackText, setFeedbackText] = useState("");
   const [lightboxImage, setLightboxImage] = useState<{ url: string; name: string; angle: string } | null>(null);
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({ visualStyle: true, overview: true, storyElements: true });
+  const toggleSection = (key: string) => setCollapsedSections(prev => ({ ...prev, [key]: !prev[key] }));
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const [facePhotos, setFacePhotos] = useState<any[]>([]);
+  const [uploadingFace, setUploadingFace] = useState<string | null>(null);
+  const facePhotoPollRef = useRef<NodeJS.Timeout | null>(null);
+  const faceFileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  const fetchFacePhotos = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}/face-photos`, { headers: getApiHeaders() });
+      if (res.ok) setFacePhotos(await res.json());
+    } catch {}
+  }, [projectId]);
+
+  useEffect(() => { fetchFacePhotos(); }, [fetchFacePhotos]);
+
+  useEffect(() => {
+    const hasConverting = facePhotos.some(p => p.status === "converting");
+    if (hasConverting && !facePhotoPollRef.current) {
+      facePhotoPollRef.current = setInterval(async () => {
+        try {
+          const res = await fetch(`/api/projects/${projectId}/face-photos/poll`, { method: "POST", headers: getApiHeaders() });
+          if (res.ok) {
+            const data = await res.json();
+            setFacePhotos(data);
+            if (!data.some((p: any) => p.status === "converting") && facePhotoPollRef.current) {
+              clearInterval(facePhotoPollRef.current);
+              facePhotoPollRef.current = null;
+            }
+          }
+        } catch {}
+      }, 4000);
+    }
+    return () => {
+      if (facePhotoPollRef.current) { clearInterval(facePhotoPollRef.current); facePhotoPollRef.current = null; }
+    };
+  }, [facePhotos, projectId]);
+
+  const handleFaceUpload = useCallback(async (characterName: string, file: File) => {
+    setUploadingFace(characterName);
+    try {
+      const formData = new FormData();
+      formData.append("photo", file);
+      const uploadRes = await fetch(`/api/projects/${projectId}/characters/${encodeURIComponent(characterName)}/face-photo`, {
+        method: "POST",
+        headers: getApiHeaders(),
+        body: formData,
+      });
+      if (!uploadRes.ok) { const err = await uploadRes.json(); throw new Error(err.error); }
+      toast({ title: "Photo uploaded", description: "Converting to UE5 style..." });
+
+      const stylizeRes = await fetch(`/api/projects/${projectId}/characters/${encodeURIComponent(characterName)}/stylize-face`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getApiHeaders() },
+        body: JSON.stringify({ imageModel: selectedImageModel }),
+      });
+      if (!stylizeRes.ok) { const err = await stylizeRes.json(); throw new Error(err.error); }
+
+      await fetchFacePhotos();
+      toast({ title: "Style transfer started", description: "Converting real photo to UE5 style..." });
+    } catch (err: any) {
+      toast({ title: "Upload failed", description: err.message, variant: "destructive" });
+    } finally {
+      setUploadingFace(null);
+    }
+  }, [projectId, selectedImageModel, toast, fetchFacePhotos]);
+
+  const handleDeleteFace = useCallback(async (characterName: string) => {
+    try {
+      await fetch(`/api/projects/${projectId}/characters/${encodeURIComponent(characterName)}/face-photo`, {
+        method: "DELETE",
+        headers: getApiHeaders(),
+      });
+      setFacePhotos(prev => prev.filter(p => p.characterName.toLowerCase() !== characterName.toLowerCase()));
+      toast({ title: "Face reference removed" });
+    } catch (err: any) {
+      toast({ title: "Delete failed", description: err.message, variant: "destructive" });
+    }
+  }, [projectId, toast]);
+
+  const getFacePhotoForCharacter = useCallback((characterName: string) => {
+    return facePhotos.find(p => p.characterName.toLowerCase() === characterName.toLowerCase());
+  }, [facePhotos]);
 
   const fetchCharRefs = useCallback(async () => {
     try {
@@ -1793,6 +2130,7 @@ function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: S
       if (res.ok) {
         const data = await res.json();
         setCharRefs(data);
+        syncCharacterReferencesCache(projectId, data);
         return data;
       }
     } catch {}
@@ -1812,6 +2150,7 @@ function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: S
           if (res.ok) {
             const data = await res.json();
             setCharRefs(data);
+            syncCharacterReferencesCache(projectId, data);
             const stillGenerating = data.some((r: any) => r.status === "generating");
             if (!stillGenerating && pollIntervalRef.current) {
               clearInterval(pollIntervalRef.current);
@@ -1841,7 +2180,9 @@ function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: S
       });
       if (res.ok) {
         const data = await res.json();
-        setCharRefs(data.refs || []);
+        const refs = data.refs || [];
+        setCharRefs(refs);
+        syncCharacterReferencesCache(projectId, refs);
         toast({ title: `Generating ${data.count} character portraits...` });
       } else {
         const err = await res.json();
@@ -1865,11 +2206,59 @@ function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: S
         body: JSON.stringify({ feedback: feedback || undefined, imageModel: selectedImageModel }),
       });
       if (res.ok) {
-        setCharRefs(prev => prev.map(r => r.id === refId ? { ...r, status: "generating", imageUrl: null } : r));
+        setCharRefs((prev) => {
+          const next = prev.map((r) => (r.id === refId ? { ...r, status: "generating", imageUrl: null } : r));
+          syncCharacterReferencesCache(projectId, next);
+          return next;
+        });
         toast({ title: feedback ? "Applying feedback and regenerating..." : "Regenerating portrait..." });
       }
     } catch {}
   };
+
+  const [regenMenuChar, setRegenMenuChar] = useState<string | null>(null);
+
+  const regenerateAllPortraitsForCharacter = async (characterName: string, mode: "default" | "different" | "reference" = "default") => {
+    setRegeneratingCharName(characterName);
+    setRegenMenuChar(null);
+    const modeLabels = { default: "Regenerating", different: "Creating new look for", reference: "Matching face reference for" };
+    try {
+      const res = await fetch(`/api/projects/${projectId}/characters/${encodeURIComponent(characterName)}/regenerate-all-portraits`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getApiHeaders() },
+        body: JSON.stringify({ imageModel: selectedImageModel, mode }),
+      });
+      if (res.ok) {
+        setCharRefs((prev) => {
+          const next = prev.map((r) =>
+            r.characterName.toLowerCase() === characterName.toLowerCase()
+              ? { ...r, status: "generating", imageUrl: null }
+              : r
+          );
+          syncCharacterReferencesCache(projectId, next);
+          return next;
+        });
+        toast({ title: `${modeLabels[mode]} ${characterName}`, description: mode === "different" ? "AI will create a completely different face..." : mode === "reference" ? "Using your uploaded face as reference..." : "Regenerating all 3 portraits..." });
+      } else {
+        const err = await res.json().catch(() => ({ error: "Failed" }));
+        toast({ title: "Failed", description: err.error, variant: "destructive" });
+      }
+    } catch (err: any) {
+      toast({ title: "Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setRegeneratingCharName(null);
+    }
+  };
+
+  useEffect(() => {
+    if (!regenMenuChar) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest("[data-regen-menu]")) setRegenMenuChar(null);
+    };
+    document.addEventListener("click", handler);
+    return () => document.removeEventListener("click", handler);
+  }, [regenMenuChar]);
 
   const completedRefs = charRefs.filter(r => r.status === "completed" && r.imageUrl);
   const generatingRefs = charRefs.filter(r => r.status === "generating");
@@ -1885,87 +2274,12 @@ function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: S
           onClose={() => setLightboxImage(null)}
         />
       )}
-      <Card className="glass-card rounded-2xl overflow-hidden p-0">
-        <div className="px-5 pt-5 pb-4 border-b border-white/5">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center ring-1 ring-primary/15">
-              <BookOpen className="w-5 h-5 text-primary" />
-            </div>
-            <div>
-              <h2 className="text-base font-bold">Story Bible</h2>
-              <p className="text-xs text-muted-foreground">AI-extracted world, characters, and visual direction</p>
-            </div>
-          </div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-white/5">
-          <div className="p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <Palette className="w-3.5 h-3.5 text-purple-400" />
-              <h3 className="text-xs font-semibold text-purple-400 uppercase tracking-wider">Visual Style</h3>
-            </div>
-            <div className="space-y-2.5">
-              {[
-                { label: "Base", value: analysis.visualStyle.baseStyle },
-                { label: "Lighting", value: analysis.visualStyle.lighting },
-                { label: "Palette", value: analysis.visualStyle.colorPalette },
-                { label: "Atmosphere", value: analysis.visualStyle.atmosphere },
-              ].map((item) => (
-                <div key={item.label}>
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">{item.label}</p>
-                  <p className="text-xs leading-relaxed">{item.value}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <Clock className="w-3.5 h-3.5 text-blue-400" />
-              <h3 className="text-xs font-semibold text-blue-400 uppercase tracking-wider">Overview</h3>
-            </div>
-            <div className="space-y-2.5">
-              {[
-                { label: "Genre", value: analysis.genre },
-                { label: "Setting", value: analysis.setting },
-                { label: "Time Period", value: analysis.timePeriod },
-              ].map((item) => (
-                <div key={item.label}>
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">{item.label}</p>
-                  <p className="text-xs leading-relaxed">{item.value}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <Crosshair className="w-3.5 h-3.5 text-emerald-400" />
-              <h3 className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">Story Elements</h3>
-            </div>
-            <div className="space-y-3">
-              {[
-                { label: "Characters", count: analysis.characters.length, color: "text-amber-400", icon: <User className="w-3.5 h-3.5" /> },
-                { label: "Jets / Aircraft", count: analysis.jets.length, color: "text-sky-400", icon: <Plane className="w-3.5 h-3.5" /> },
-                { label: "Locations", count: analysis.locations.length, color: "text-amber-400", icon: <MapPin className="w-3.5 h-3.5" /> },
-              ].map((item) => (
-                <div key={item.label} className="flex items-center gap-2.5">
-                  <div className={`w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center ${item.color}`}>
-                    {item.icon}
-                  </div>
-                  <div>
-                    <p className="text-lg font-bold tabular-nums leading-none">{item.count}</p>
-                    <p className="text-[10px] text-muted-foreground">{item.label}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </Card>
 
       {analysis.characters.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-3">
             <h3 className="section-title">
-              <div className="icon-box bg-gradient-to-br from-amber-500/10 to-orange-500/5 ring-amber-500/15 w-6 h-6 rounded-lg">
+              <div className="icon-box bg-amber-500/10 ring-amber-500/15 w-6 h-6 rounded-lg">
                 <User className="w-3.5 h-3.5 text-amber-400" />
               </div>
               Characters ({analysis.characters.length})
@@ -1973,10 +2287,10 @@ function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: S
             <button
               onClick={generateCharacterPortraits}
               disabled={isGeneratingRefs || generatingRefs.length > 0}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all duration-300 active:scale-[0.98] disabled:opacity-50 ${
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all duration-300 disabled:opacity-50 ${
                 completedRefs.length > 0
-                  ? "ghost-btn"
-                  : "gradient-btn text-white border-0 glow-sm hover:glow-md"
+                  ? "flat-btn-ghost"
+                  : "bg-primary text-white border-0"
               }`}
             >
               {isGeneratingRefs || generatingRefs.length > 0 ? (
@@ -1995,122 +2309,285 @@ function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: S
           )}
           <div className="grid grid-cols-1 gap-4">
             {analysis.characters.map((char, i) => {
-              const angleOrder = ["front", "three-quarter", "profile"];
-              const angleLabels: Record<string, string> = { front: "Front", "three-quarter": "3/4", profile: "Profile" };
+              const angleOrder = ["front", "three-quarter", "closeup"];
+              const angleLabels: Record<string, string> = { front: "Front", "three-quarter": "3/4", closeup: "Close-Up" };
               const charAngleRefs = angleOrder.map(angle => {
                 return charRefs.find(r => r.characterName === char.name && (r.angle || "front") === angle) || null;
               });
               const hasAnyRef = charAngleRefs.some(r => r !== null);
+              const facePhoto = getFacePhotoForCharacter(char.name);
 
               return (
-                <Card key={i} className="glass-card p-4 rounded-2xl">
-                  <div className="flex gap-4">
-                    <div className="flex-shrink-0">
+                <Card key={i} className="p-5 rounded-lg">
+                  {/* Face Reference Upload Section */}
+                  <div className="mb-4">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      ref={(el) => { faceFileInputRefs.current[char.name] = el; }}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleFaceUpload(char.name, file);
+                        e.target.value = "";
+                      }}
+                    />
+                    {facePhoto ? (
+                      <div className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+                        <div className="flex gap-2 shrink-0">
+                          <div className="relative group">
+                            <img
+                              src={facePhoto.originalPhotoUrl}
+                              alt="Original"
+                              className="w-16 h-20 object-cover rounded-lg border border-white/10"
+                            />
+                            <span className="absolute bottom-0 inset-x-0 text-[8px] text-center bg-black/70 text-white/70 rounded-b-lg py-0.5">Original</span>
+                          </div>
+                          {facePhoto.status === "ready" && facePhoto.stylizedPhotoUrl ? (
+                            <div className="relative group">
+                              <img
+                                src={proxyUrl(facePhoto.stylizedPhotoUrl)}
+                                alt="UE5 Style"
+                                className="w-16 h-20 object-cover rounded-lg border border-emerald-500/30 ring-1 ring-emerald-500/20"
+                              />
+                              <span className="absolute bottom-0 inset-x-0 text-[8px] text-center bg-emerald-900/80 text-emerald-300 rounded-b-lg py-0.5">UE5 Style</span>
+                            </div>
+                          ) : facePhoto.status === "converting" ? (
+                            <div className="w-16 h-20 rounded-lg border border-amber-500/20 bg-amber-950/10 flex items-center justify-center">
+                              <Loader2 className="w-5 h-5 text-amber-400 animate-spin" />
+                            </div>
+                          ) : facePhoto.status === "failed" ? (
+                            <div
+                              className="w-16 h-20 rounded-lg border border-red-500/20 bg-red-950/10 flex flex-col items-center justify-center cursor-pointer hover:border-red-500/40 transition-colors"
+                              onClick={async () => {
+                                try {
+                                  await fetch(`/api/projects/${projectId}/characters/${encodeURIComponent(char.name)}/stylize-face`, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json", ...getApiHeaders() },
+                                    body: JSON.stringify({ imageModel: selectedImageModel }),
+                                  });
+                                  fetchFacePhotos();
+                                  toast({ title: "Retrying style transfer..." });
+                                } catch {}
+                              }}
+                            >
+                              <RefreshCw className="w-4 h-4 text-red-400" />
+                              <span className="text-[8px] text-red-400 mt-0.5">Retry</span>
+                            </div>
+                          ) : null}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Camera className="w-3.5 h-3.5 text-emerald-400" />
+                            <span className="text-xs font-semibold text-emerald-400">Real Face Reference</span>
+                            {facePhoto.status === "ready" && <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-medium">Ready</span>}
+                            {facePhoto.status === "converting" && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 font-medium">Converting...</span>}
+                            {facePhoto.status === "failed" && <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 font-medium">Failed</span>}
+                          </div>
+                          <p className="text-[11px] text-muted-foreground leading-relaxed">
+                            {facePhoto.status === "ready"
+                              ? "Stylized face will be used as reference when generating portraits."
+                              : facePhoto.status === "converting"
+                              ? "Converting real photo to UE5 cinematic style..."
+                              : "Uploaded — awaiting style conversion."}
+                          </p>
+                          <div className="flex gap-2 mt-2">
+                            <button
+                              className="text-[10px] text-muted-foreground hover:text-white transition-colors flex items-center gap-1"
+                              onClick={() => faceFileInputRefs.current[char.name]?.click()}
+                            >
+                              <RefreshCw className="w-3 h-3" />Replace
+                            </button>
+                            <button
+                              className="text-[10px] text-red-400/70 hover:text-red-400 transition-colors flex items-center gap-1"
+                              onClick={() => handleDeleteFace(char.name)}
+                            >
+                              <Trash2 className="w-3 h-3" />Remove
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => faceFileInputRefs.current[char.name]?.click()}
+                        disabled={uploadingFace === char.name}
+                        className="w-full flex items-center gap-3 p-3 rounded-xl border border-dashed border-white/10 hover:border-emerald-500/30 hover:bg-emerald-500/[0.03] transition-all duration-200 text-left group"
+                      >
+                        <div className="w-10 h-10 rounded-lg bg-white/[0.04] group-hover:bg-emerald-500/10 flex items-center justify-center transition-colors">
+                          {uploadingFace === char.name
+                            ? <Loader2 className="w-4 h-4 text-muted-foreground animate-spin" />
+                            : <Camera className="w-4 h-4 text-muted-foreground group-hover:text-emerald-400 transition-colors" />}
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground group-hover:text-emerald-400 transition-colors">
+                            {uploadingFace === char.name ? "Uploading..." : "Upload Real Face (Optional)"}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground/60">Upload a photo to generate portraits that resemble a real person</p>
+                        </div>
+                      </button>
+                    )}
+                  </div>
+
+                  {hasAnyRef && (
+                    <div className="grid grid-cols-3 gap-3 mb-4">
+                      {charAngleRefs.map((ref, ai) => {
+                        const angle = angleOrder[ai];
+                        if (ref && ref.status === "completed" && ref.imageUrl) {
+                          return (
+                            <div key={angle} className="relative group flex flex-col items-center">
+                              <img
+                                src={proxyUrl(ref.imageUrl)}
+                                alt={`${char.name} - ${angleLabels[angle]}`}
+                                className="w-full aspect-[9/16] object-cover rounded-2xl border border-[#1a1a1a] shadow-lg ring-1 ring-white/[0.04] cursor-pointer hover:ring-primary/30 transition-all img-fade-in"
+                                loading="lazy"
+                                decoding="async"
+                                onLoad={(e) => e.currentTarget.classList.add("loaded")}
+                                onClick={() => setLightboxImage({ url: ref.imageUrl, name: char.name, angle })}
+                              />
+                              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm rounded-2xl opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center gap-2">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setLightboxImage({ url: ref.imageUrl, name: char.name, angle }); }}
+                                  className="p-2 bg-white/15 hover:bg-white/25 rounded-lg transition-colors backdrop-blur-sm"
+                                  title="View full size"
+                                >
+                                  <Maximize className="w-4 h-4 text-white" />
+                                </button>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); regeneratePortrait(ref.id); }}
+                                  className="p-2 bg-white/15 hover:bg-white/25 rounded-lg transition-colors backdrop-blur-sm"
+                                  disabled={regeneratingId === ref.id}
+                                  title="Regenerate this angle"
+                                >
+                                  <RefreshCw className="w-4 h-4 text-white" />
+                                </button>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setFeedbackRefId(ref.id); setFeedbackText(""); }}
+                                  className="p-2 bg-white/15 hover:bg-white/25 rounded-lg transition-colors backdrop-blur-sm"
+                                  disabled={regeneratingId === ref.id}
+                                  title="Redo with feedback"
+                                >
+                                  <MessageSquare className="w-4 h-4 text-white" />
+                                </button>
+                              </div>
+                              <span className="text-[10px] text-muted-foreground mt-1.5 font-medium">{angleLabels[angle]}</span>
+                            </div>
+                          );
+                        } else if (ref && ref.status === "generating") {
+                          return (
+                            <div key={angle} className="flex flex-col items-center">
+                              <div className="w-full aspect-[9/16] rounded-2xl border border-[#1a1a1a] flex items-center justify-center">
+                                <Loader2 className="w-8 h-8 text-muted-foreground animate-spin" />
+                              </div>
+                              <span className="text-[10px] text-muted-foreground mt-1.5 font-medium">{angleLabels[angle]}</span>
+                            </div>
+                          );
+                        } else if (ref && ref.status === "failed") {
+                          return (
+                            <div key={angle} className="flex flex-col items-center">
+                              <div className="w-full aspect-[9/16] rounded-2xl border border-red-500/20 bg-red-950/10 flex items-center justify-center cursor-pointer hover:border-red-500/40 transition-colors" onClick={() => regeneratePortrait(ref.id)}>
+                                <RefreshCw className="w-6 h-6 text-red-400" />
+                              </div>
+                              <span className="text-[10px] text-red-400 mt-1.5 font-medium">{angleLabels[angle]}</span>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })}
+                    </div>
+                  )}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <div>
+                        <h4 className="font-semibold text-sm" data-testid={`text-character-name-${i}`}>{char.name}</h4>
+                        <p className="text-xs text-muted-foreground">{char.role}</p>
+                      </div>
                       {hasAnyRef && (
-                        <div className="flex gap-2">
-                          {charAngleRefs.map((ref, ai) => {
-                            const angle = angleOrder[ai];
-                            if (ref && ref.status === "completed" && ref.imageUrl) {
-                              return (
-                                <div key={angle} className="relative group flex flex-col items-center">
-                                  <img
-                                    src={proxyUrl(ref.imageUrl)}
-                                    alt={`${char.name} - ${angleLabels[angle]}`}
-                                    className="w-20 h-20 object-cover rounded-xl border border-[var(--glass-border)] shadow-md ring-1 ring-white/[0.04] cursor-pointer hover:ring-primary/30 transition-all img-fade-in"
-                                    loading="lazy"
-                                    decoding="async"
-                                    onLoad={(e) => e.currentTarget.classList.add("loaded")}
-                                    onClick={() => setLightboxImage({ url: ref.imageUrl, name: char.name, angle })}
-                                  />
-                                  <div className="absolute inset-0 bg-black/60 backdrop-blur-sm rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center gap-1">
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); setLightboxImage({ url: ref.imageUrl, name: char.name, angle }); }}
-                                      className="p-1 bg-white/15 hover:bg-white/25 rounded-md transition-colors backdrop-blur-sm"
-                                      title="View full size"
-                                    >
-                                      <Maximize className="w-3.5 h-3.5 text-white" />
-                                    </button>
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); regeneratePortrait(ref.id); }}
-                                      className="p-1 bg-white/15 hover:bg-white/25 rounded-md transition-colors backdrop-blur-sm"
-                                      disabled={regeneratingId === ref.id}
-                                      title="Regenerate this angle"
-                                    >
-                                      <RefreshCw className="w-3.5 h-3.5 text-white" />
-                                    </button>
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); setFeedbackRefId(ref.id); setFeedbackText(""); }}
-                                      className="p-1 bg-white/15 hover:bg-white/25 rounded-md transition-colors backdrop-blur-sm"
-                                      disabled={regeneratingId === ref.id}
-                                      title="Redo with feedback"
-                                    >
-                                      <MessageSquare className="w-3.5 h-3.5 text-white" />
-                                    </button>
-                                  </div>
-                                  <span className="text-[9px] text-muted-foreground mt-1 font-medium">{angleLabels[angle]}</span>
+                        <div className="relative shrink-0" data-regen-menu>
+                          {regeneratingCharName === char.name || charAngleRefs.some(r => r?.status === "generating") ? (
+                            <button disabled className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-white/[0.05] border border-white/10 text-muted-foreground opacity-50">
+                              <Loader2 className="w-3 h-3 animate-spin" />Generating...
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => setRegenMenuChar(regenMenuChar === char.name ? null : char.name)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-white/[0.05] border border-white/10 hover:bg-white/[0.08] hover:border-primary/30 text-muted-foreground hover:text-primary transition-all duration-200"
+                              title="Redo character portraits"
+                            >
+                              <RefreshCw className="w-3 h-3" />Redo Portraits<ChevronDown className="w-3 h-3 ml-0.5" />
+                            </button>
+                          )}
+                          {regenMenuChar === char.name && (
+                            <div className="absolute right-0 top-full mt-1 z-50 w-56 rounded-xl border border-white/10 bg-[#1a1a1a] shadow-2xl shadow-black/50 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
+                              <button
+                                onClick={() => regenerateAllPortraitsForCharacter(char.name, "different")}
+                                className="w-full flex items-start gap-3 px-4 py-3 hover:bg-white/[0.05] transition-colors text-left"
+                              >
+                                <Sparkles className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
+                                <div>
+                                  <p className="text-xs font-semibold text-amber-400">New Random Look</p>
+                                  <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">Generate a completely different face for this character</p>
                                 </div>
-                              );
-                            } else if (ref && ref.status === "generating") {
-                              return (
-                                <div key={angle} className="flex flex-col items-center">
-                                  <div className="w-20 h-20 rounded-xl border border-[var(--glass-border)] glass-surface flex items-center justify-center">
-                                    <Loader2 className="w-5 h-5 text-muted-foreground animate-spin" />
+                              </button>
+                              {facePhoto && facePhoto.status === "ready" && (
+                                <button
+                                  onClick={() => regenerateAllPortraitsForCharacter(char.name, "reference")}
+                                  className="w-full flex items-start gap-3 px-4 py-3 hover:bg-white/[0.05] transition-colors text-left border-t border-white/5"
+                                >
+                                  <Camera className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" />
+                                  <div>
+                                    <p className="text-xs font-semibold text-emerald-400">Match My Face Reference</p>
+                                    <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">Use your uploaded photo to match facial features</p>
                                   </div>
-                                  <span className="text-[9px] text-muted-foreground mt-1 font-medium">{angleLabels[angle]}</span>
+                                </button>
+                              )}
+                              <button
+                                onClick={() => regenerateAllPortraitsForCharacter(char.name, "default")}
+                                className="w-full flex items-start gap-3 px-4 py-3 hover:bg-white/[0.05] transition-colors text-left border-t border-white/5"
+                              >
+                                <RefreshCw className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
+                                <div>
+                                  <p className="text-xs font-semibold">Redo Same Style</p>
+                                  <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">Regenerate with the same character description</p>
                                 </div>
-                              );
-                            } else if (ref && ref.status === "failed") {
-                              return (
-                                <div key={angle} className="flex flex-col items-center">
-                                  <div className="w-20 h-20 rounded-xl border border-red-500/20 bg-red-950/10 flex items-center justify-center cursor-pointer hover:border-red-500/40 transition-colors" onClick={() => regeneratePortrait(ref.id)}>
-                                    <RefreshCw className="w-4 h-4 text-red-400" />
-                                  </div>
-                                  <span className="text-[9px] text-red-400 mt-1 font-medium">{angleLabels[angle]}</span>
-                                </div>
-                              );
-                            }
-                            return null;
-                          })}
+                              </button>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-semibold text-sm" data-testid={`text-character-name-${i}`}>{char.name}</h4>
-                      <p className="text-xs text-muted-foreground mb-1">{char.role}</p>
-                      <p className="text-xs line-clamp-3 leading-relaxed">{char.description}</p>
-                      <p className="text-[11px] text-muted-foreground mt-1 line-clamp-2 leading-relaxed">
-                        <span className="font-medium">Appearance:</span> {char.appearance}
-                      </p>
-                      {charAngleRefs.map((ref) => {
-                        if (!ref || feedbackRefId !== ref.id) return null;
-                        return (
-                          <div key={ref.id} className="mt-2 space-y-2">
-                            <textarea
-                              value={feedbackText}
-                              onChange={(e) => setFeedbackText(e.target.value)}
-                              placeholder="Describe what you'd like changed... e.g. 'make him look more weathered and battle-worn' or 'wrong uniform, should be navy blue flight suit'"
-                              className="glass-input w-full h-20 text-xs rounded-xl px-3 py-2 resize-none focus:outline-none"
-                              autoFocus
-                            />
-                            <div className="flex gap-2">
-                              <button
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold gradient-btn text-white border-0 transition-all duration-200 active:scale-[0.98] disabled:opacity-50"
-                                onClick={() => regeneratePortrait(ref.id, feedbackText)}
-                                disabled={!feedbackText.trim()}
-                              >
-                                <Send className="w-3 h-3" />Apply & Regenerate
-                              </button>
-                              <button
-                                className="px-3 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground transition-colors"
-                                onClick={() => { setFeedbackRefId(null); setFeedbackText(""); }}
-                              >
-                                Cancel
-                              </button>
-                            </div>
+                    <p className="text-xs leading-relaxed">{char.description}</p>
+                    <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                      <span className="font-medium">Appearance:</span> {char.appearance}
+                    </p>
+                    {charAngleRefs.map((ref) => {
+                      if (!ref || feedbackRefId !== ref.id) return null;
+                      return (
+                        <div key={ref.id} className="mt-3 space-y-2">
+                          <textarea
+                            value={feedbackText}
+                            onChange={(e) => setFeedbackText(e.target.value)}
+                            placeholder="Describe what you'd like changed... e.g. 'make him look more weathered and battle-worn' or 'wrong uniform, should be navy blue flight suit'"
+                            className="surface-input w-full h-20 text-xs rounded-xl px-3 py-2 resize-none focus:outline-none"
+                            autoFocus
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary text-white border-0 transition-all duration-200 disabled:opacity-50"
+                              onClick={() => regeneratePortrait(ref.id, feedbackText)}
+                              disabled={!feedbackText.trim()}
+                            >
+                              <Send className="w-3 h-3" />Apply & Regenerate
+                            </button>
+                            <button
+                              className="px-3 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground transition-colors"
+                              onClick={() => { setFeedbackRefId(null); setFeedbackText(""); }}
+                            >
+                              Cancel
+                            </button>
                           </div>
-                        );
-                      })}
-                    </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </Card>
               );
@@ -2119,17 +2596,102 @@ function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: S
         </div>
       )}
 
+      <Card className="rounded-lg overflow-hidden p-0">
+        <div className="px-5 pt-5 pb-4 border-b border-white/5">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center ring-1 ring-primary/15">
+              <BookOpen className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold">Story Bible</h2>
+              <p className="text-xs text-muted-foreground">AI-extracted world, characters, and visual direction</p>
+            </div>
+          </div>
+        </div>
+        <div className="divide-y divide-white/5">
+          <div>
+            <button onClick={() => toggleSection("visualStyle")} className="w-full px-5 py-3.5 flex items-center gap-2 hover:bg-white/[0.02] transition-colors">
+              <Palette className="w-3.5 h-3.5 text-purple-400" />
+              <h3 className="text-xs font-semibold text-purple-400 uppercase tracking-wider">Visual Style</h3>
+              <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground ml-auto transition-transform duration-200 ${collapsedSections.visualStyle ? "" : "rotate-180"}`} />
+            </button>
+            {!collapsedSections.visualStyle && (
+              <div className="px-5 pb-4 space-y-2.5 animate-in fade-in slide-in-from-top-1 duration-200">
+                {[
+                  { label: "Base", value: analysis.visualStyle.baseStyle },
+                  { label: "Lighting", value: analysis.visualStyle.lighting },
+                  { label: "Palette", value: analysis.visualStyle.colorPalette },
+                  { label: "Atmosphere", value: analysis.visualStyle.atmosphere },
+                ].map((item) => (
+                  <div key={item.label}>
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">{item.label}</p>
+                    <p className="text-xs leading-relaxed">{item.value}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div>
+            <button onClick={() => toggleSection("overview")} className="w-full px-5 py-3.5 flex items-center gap-2 hover:bg-white/[0.02] transition-colors">
+              <Clock className="w-3.5 h-3.5 text-blue-400" />
+              <h3 className="text-xs font-semibold text-blue-400 uppercase tracking-wider">Overview</h3>
+              <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground ml-auto transition-transform duration-200 ${collapsedSections.overview ? "" : "rotate-180"}`} />
+            </button>
+            {!collapsedSections.overview && (
+              <div className="px-5 pb-4 space-y-2.5 animate-in fade-in slide-in-from-top-1 duration-200">
+                {[
+                  { label: "Genre", value: analysis.genre },
+                  { label: "Setting", value: analysis.setting },
+                  { label: "Time Period", value: analysis.timePeriod },
+                ].map((item) => (
+                  <div key={item.label}>
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">{item.label}</p>
+                    <p className="text-xs leading-relaxed">{item.value}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div>
+            <button onClick={() => toggleSection("storyElements")} className="w-full px-5 py-3.5 flex items-center gap-2 hover:bg-white/[0.02] transition-colors">
+              <Crosshair className="w-3.5 h-3.5 text-emerald-400" />
+              <h3 className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">Story Elements</h3>
+              <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground ml-auto transition-transform duration-200 ${collapsedSections.storyElements ? "" : "rotate-180"}`} />
+            </button>
+            {!collapsedSections.storyElements && (
+              <div className="px-5 pb-4 space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
+                {[
+                  { label: "Characters", count: analysis.characters.length, color: "text-amber-400", icon: <User className="w-3.5 h-3.5" /> },
+                  { label: "Jets / Aircraft", count: analysis.jets.length, color: "text-sky-400", icon: <Plane className="w-3.5 h-3.5" /> },
+                  { label: "Locations", count: analysis.locations.length, color: "text-amber-400", icon: <MapPin className="w-3.5 h-3.5" /> },
+                ].map((item) => (
+                  <div key={item.label} className="flex items-center gap-2.5">
+                    <div className={`w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center ${item.color}`}>
+                      {item.icon}
+                    </div>
+                    <div>
+                      <p className="text-lg font-bold tabular-nums leading-none">{item.count}</p>
+                      <p className="text-[10px] text-muted-foreground">{item.label}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </Card>
+
       {analysis.jets.length > 0 && (
         <div>
           <h3 className="section-title mb-3">
-            <div className="icon-box bg-gradient-to-br from-sky-500/10 to-blue-500/5 ring-sky-500/15 w-6 h-6 rounded-lg">
+            <div className="icon-box bg-sky-500/10 ring-sky-500/15 w-6 h-6 rounded-lg">
               <Plane className="w-3.5 h-3.5 text-sky-400" />
             </div>
             Jets & Aircraft ({analysis.jets.length})
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {analysis.jets.map((jet, i) => (
-              <Card key={i} className="glass-card p-4 rounded-2xl hover:border-sky-500/15 transition-colors">
+              <Card key={i} className="p-4 rounded-lg hover:border-sky-500/15 transition-colors">
                 <div className="flex items-start gap-3">
                   <div className="w-8 h-8 rounded-lg bg-sky-500/10 flex items-center justify-center flex-shrink-0 mt-0.5">
                     <Plane className="w-4 h-4 text-sky-400" />
@@ -2153,14 +2715,14 @@ function AnalysisView({ analysis, projectId, selectedImageModel }: { analysis: S
       {analysis.locations.length > 0 && (
         <div>
           <h3 className="section-title mb-3">
-            <div className="icon-box bg-gradient-to-br from-amber-500/10 to-yellow-500/5 ring-amber-500/15 w-6 h-6 rounded-lg">
+            <div className="icon-box bg-amber-500/10 ring-amber-500/15 w-6 h-6 rounded-lg">
               <MapPin className="w-3.5 h-3.5 text-amber-400" />
             </div>
             Locations ({analysis.locations.length})
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {analysis.locations.map((loc, i) => (
-              <Card key={i} className="glass-card p-4 rounded-2xl hover:border-amber-500/15 transition-colors">
+              <Card key={i} className="p-4 rounded-lg hover:border-amber-500/15 transition-colors">
                 <div className="flex items-start gap-3">
                   <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center flex-shrink-0 mt-0.5">
                     <MapPin className="w-4 h-4 text-amber-400" />
@@ -2242,6 +2804,8 @@ function StoryboardView({
   const [expandedErrorId, setExpandedErrorId] = useState<string | null>(null);
   const [sceneChatId, setSceneChatId] = useState<string | null>(null);
   const [sceneChatMessages, setSceneChatMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
+  const sceneChatMessagesRef = useRef(sceneChatMessages);
+  sceneChatMessagesRef.current = sceneChatMessages;
   const [sceneChatInput, setSceneChatInput] = useState("");
   const [sceneChatLoading, setSceneChatLoading] = useState(false);
   const [sceneChatApplying, setSceneChatApplying] = useState(false);
@@ -2256,15 +2820,15 @@ function StoryboardView({
     if (!sceneChatInput.trim() || sceneChatLoading) return;
     const userMsg = sceneChatInput.trim();
     setSceneChatInput("");
-    const newMessages = [...sceneChatMessages, { role: "user" as const, content: userMsg }];
+    const newMessages = [...sceneChatMessagesRef.current, { role: "user" as const, content: userMsg }];
     setSceneChatMessages(newMessages);
     setSceneChatLoading(true);
     try {
       const res = await apiRequest("POST", `/api/projects/${projectId}/scenes/${sceneId}/scene-chat`, { messages: newMessages });
       const data = await res.json();
-      setSceneChatMessages([...newMessages, { role: "assistant" as const, content: data.reply }]);
+      setSceneChatMessages(prev => [...prev, { role: "assistant" as const, content: data.reply }]);
     } catch (err: any) {
-      setSceneChatMessages([...newMessages, { role: "assistant" as const, content: "Sorry, I had trouble understanding. Could you try rephrasing?" }]);
+      setSceneChatMessages(prev => [...prev, { role: "assistant" as const, content: "Sorry, I had trouble understanding. Could you try rephrasing?" }]);
     } finally {
       setSceneChatLoading(false);
     }
@@ -2335,12 +2899,12 @@ function StoryboardView({
         return (
           <div key={scene.id} data-testid={`card-scene-${index}`} className="relative pl-12 scene-card">
             <div className="absolute left-0 top-5 flex flex-col items-center z-10">
-              <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-primary/25 to-primary/10 border border-primary/20 flex items-center justify-center text-sm font-bold text-primary shadow-lg shadow-primary/5 backdrop-blur-sm">
+              <div className="w-11 h-11 rounded-lg bg-primary/25 border border-primary/20 flex items-center justify-center text-sm font-bold text-primary shadow-lg shadow-primary/5 backdrop-blur-sm">
                 {index + 1}
               </div>
             </div>
 
-            <Card className="p-5 relative glass-card rounded-2xl">
+            <Card className="p-5 relative rounded-lg">
               <div className="flex flex-col gap-3 mb-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
@@ -2361,7 +2925,7 @@ function StoryboardView({
                 </div>
               </div>
 
-              <div className="p-3 rounded-xl glass-surface border border-[var(--glass-border)] mb-3">
+              <div className="p-3 rounded-xl border border-[#1a1a1a] mb-3">
                 <p className="text-sm leading-relaxed italic text-foreground/90" data-testid={`text-sentence-${index}`}>
                   "{scene.sentence}"
                 </p>
@@ -2405,8 +2969,8 @@ function StoryboardView({
                   size="sm"
                   variant={hasImages ? "outline" : "default"}
                   onClick={() => onGenerate(scene.id)}
-                  disabled={(isGenerating && generatingSceneId === scene.id) || !charRefsReady}
-                  className={hasImages ? "glass-border rounded-xl text-xs hover:bg-[var(--glass-highlight)] transition-all duration-200" : "gradient-btn text-white border-0 rounded-xl text-xs"}
+                  disabled={isGenerating || !charRefsReady}
+                  className={hasImages ? "glass-border rounded-xl text-xs hover:bg-[rgba(255,255,255,0.05)] transition-all duration-200" : "bg-primary text-white border-0 rounded-xl text-xs"}
                   data-testid={`button-generate-scene-${index}`}
                   title={!charRefsReady ? "Generate character portraits first" : `Estimated cost: ${formatCost(expectedCount * costPerImage)}`}
                 >
@@ -2437,7 +3001,7 @@ function StoryboardView({
                         }
                       }}
                       disabled={regeneratingSceneId === scene.id || sceneChatApplying}
-                      className="glass-border rounded-xl text-xs hover:bg-[var(--glass-highlight)] transition-all duration-200"
+                      className="glass-border rounded-xl text-xs hover:bg-[rgba(255,255,255,0.05)] transition-all duration-200"
                       title="Chat with AI director to refine this scene's images"
                     >
                       {regeneratingSceneId === scene.id || sceneChatApplying ? (
@@ -2452,11 +3016,20 @@ function StoryboardView({
                         variant="outline"
                         onClick={() => onRegenerateSceneWithConsistency(scene.id)}
                         disabled={regeneratingSceneId === scene.id}
-                        className="glass-border rounded-xl text-xs hover:bg-[var(--glass-highlight)] transition-all duration-200 text-amber-400 border-amber-500/30"
+                        className="glass-border rounded-xl text-xs hover:bg-[rgba(255,255,255,0.05)] transition-all duration-200 text-amber-400 border-amber-500/30"
                         title="Regenerate all scene images using character reference portraits for consistency"
                       >
                         <Users className="w-3 h-3 mr-1" />Consistency Regen
                       </Button>
+                    )}
+                    {completedCount > 0 && (
+                      <a
+                        href={`/api/projects/${projectId}/scenes/${scene.id}/download`}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs border border-white/[0.08] bg-white/[0.03] text-white/60 hover:text-white hover:bg-white/[0.06] transition-all duration-200"
+                        title="Download scene frames + motion prompts as ZIP"
+                      >
+                        <Download className="w-3 h-3" />Frames
+                      </a>
                     )}
                   </>
                 )}
@@ -2473,7 +3046,7 @@ function StoryboardView({
                         variant="outline"
                         onClick={() => onAnimateAll(scene.id)}
                         disabled={animatingSceneId === scene.id || allAnimating}
-                        className="glass-border rounded-xl text-xs hover:bg-[var(--glass-highlight)] transition-all duration-200"
+                        className="glass-border rounded-xl text-xs hover:bg-[rgba(255,255,255,0.05)] transition-all duration-200"
                         data-testid={`button-animate-all-scene-${index}`}
                         title={`Estimated cost: ${formatCost(animateCost)}`}
                       >
@@ -2489,7 +3062,6 @@ function StoryboardView({
                 })()}
 
                 {(() => {
-                  const sceneImages = images.filter(img => img.sceneId === scene.id);
                   const hasVideos = sceneImages.some(img => img.videoUrl || img.videoStatus === "completed");
                   if (hasVideos && onRegenerateSceneVideosWithFeedback) {
                     return (
@@ -2626,7 +3198,7 @@ function StoryboardView({
                           size="sm"
                           onClick={() => applyChatFeedback(scene.id)}
                           disabled={sceneChatApplying || sceneChatLoading || !sceneChatMessages.some(m => m.role === "user")}
-                          className="gradient-btn text-white border-0 rounded-lg text-xs px-4"
+                          className="bg-primary text-white border-0 rounded-lg text-xs px-4"
                         >
                           {sceneChatApplying ? (
                             <><Loader2 className="w-3 h-3 mr-1 animate-spin" />Applying to {sceneImages.length} images...</>
@@ -2647,7 +3219,7 @@ function StoryboardView({
                       .sort((a, b) => a.variant - b.variant)
                       .map((img, vi) => (
                       <div key={img.id} className="relative">
-                        <div className="relative aspect-video rounded-xl overflow-hidden bg-muted/30 group border border-[var(--glass-border)] shadow-sm transition-all duration-300 hover:border-[var(--glass-highlight)] hover:shadow-md hover:scale-[1.02]">
+                        <div className="relative aspect-video rounded-xl overflow-hidden bg-muted/30 group border border-[#1a1a1a] shadow-sm transition-all duration-300 hover:border-[rgba(255,255,255,0.05)] hover:shadow-md hover:scale-[1.02]">
                           {img.status === "completed" && img.imageUrl ? (
                             <>
                               <img
@@ -2724,6 +3296,7 @@ function StoryboardView({
                                         onClick={(e) => e.stopPropagation()}
                                         disabled={videoGeneratingImageId === img.id}
                                         data-testid={`button-video-${img.id}`}
+                                        title="Generate video from this image"
                                       >
                                         {videoGeneratingImageId === img.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Video className="w-3 h-3" />}
                                       </Button>
@@ -2748,6 +3321,7 @@ function StoryboardView({
                                         className="h-6 w-6 bg-black/50 text-white/80 backdrop-blur-sm rounded-lg"
                                         onClick={(e) => e.stopPropagation()}
                                         disabled={videoGeneratingImageId === img.id}
+                                        title="Regenerate video / remove clip"
                                       >
                                         {videoGeneratingImageId === img.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
                                       </Button>
@@ -2782,24 +3356,41 @@ function StoryboardView({
                                 </Button>
                               </div>
                               {img.videoStatus === "generating" && (
-                                <div className="absolute top-1 left-1">
+                                <div className="absolute bottom-7 left-1 z-10">
                                   <Badge variant="outline" className="text-[8px] bg-black/60 text-yellow-300 border-yellow-400/30 px-1 py-0 backdrop-blur-sm rounded-md" title={`Generating with ${VIDEO_MODELS.find(m => m.id === (img as any).videoModel)?.name || "unknown model"}`}>
                                     <Loader2 className="w-2 h-2 animate-spin mr-0.5" />{VIDEO_MODELS.find(m => m.id === (img as any).videoModel)?.name || "Video"}
                                   </Badge>
                                 </div>
                               )}
                               {img.videoStatus === "failed" && (
-                                <div className="absolute top-1 left-1">
-                                  <Badge variant="destructive" className="text-[8px] px-1 py-0 rounded-md cursor-help" title={(img as any).videoError || "Video generation failed"}>
-                                    <Video className="w-2 h-2 mr-0.5" />Failed
+                                <div className="absolute bottom-7 left-1 right-1 z-10">
+                                  <Badge variant="destructive" className="text-[8px] px-1 py-0 rounded-md cursor-pointer inline-flex" onClick={(e) => { e.stopPropagation(); setExpandedErrorId(expandedErrorId === `video-${img.id}` ? null : `video-${img.id}`); }}>
+                                    <Video className="w-2 h-2 mr-0.5" />Video Failed
                                   </Badge>
+                                  {expandedErrorId === `video-${img.id}` && (img as any).videoError && (
+                                    <div className="mt-1 p-1.5 bg-black/90 backdrop-blur-sm rounded-md border border-red-500/30 max-h-24 overflow-y-auto">
+                                      <p className="text-[9px] text-red-300 leading-tight break-words">{(img as any).videoError}</p>
+                                    </div>
+                                  )}
                                 </div>
                               )}
                               {img.videoStatus === "completed" && img.videoUrl && (
-                                <div className="absolute top-1 left-1">
+                                <div className="absolute bottom-7 left-1 z-10">
                                   <Badge variant="outline" className="text-[8px] bg-black/60 text-green-400 border-green-400/30 px-1 py-0 backdrop-blur-sm rounded-md">
                                     <Video className="w-2 h-2 mr-0.5" />Motion
                                   </Badge>
+                                </div>
+                              )}
+                              {(img as any).qualityScore === "flagged" && (
+                                <div className="absolute top-1 left-1 z-10 group/flag">
+                                  <Badge variant="outline" className="text-[8px] bg-amber-900/80 text-amber-300 border-amber-500/40 px-1.5 py-0.5 backdrop-blur-sm rounded-md cursor-help">
+                                    <AlertTriangle className="w-2.5 h-2.5 mr-0.5" />QC Flag
+                                  </Badge>
+                                  {(img as any).qualityFeedback && (
+                                    <div className="invisible group-hover/flag:visible absolute top-full left-0 mt-1 p-2 bg-black/95 backdrop-blur-sm rounded-lg border border-amber-500/30 max-w-[200px] z-50 shadow-xl">
+                                      <p className="text-[9px] text-amber-200 leading-tight">{(img as any).qualityFeedback}</p>
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </>
@@ -2872,7 +3463,7 @@ function StoryboardView({
                         </div>
 
                         {imageFeedbackId === img.id && (
-                          <div className="absolute -bottom-1 left-0 right-0 translate-y-full z-20 p-2 rounded-lg bg-black/90 border border-blue-500/30 backdrop-blur-xl shadow-xl animate-in fade-in slide-in-from-top-1 duration-200">
+                          <div className="absolute -top-1 left-0 right-0 -translate-y-full z-20 p-2 rounded-lg bg-black/90 border border-blue-500/30 backdrop-blur-xl shadow-xl animate-in fade-in slide-in-from-bottom-1 duration-200">
                             <div className="flex items-center gap-1 mb-1.5">
                               <Pencil className="w-3 h-3 text-blue-400" />
                               <span className="text-[10px] text-blue-300 font-semibold">Image Feedback</span>
@@ -2936,13 +3527,13 @@ function StoryboardView({
                       try {
                         const prompts = JSON.parse(scene.promptBase);
                         return prompts.map((p: string, pi: number) => (
-                          <div key={pi} className="p-3 rounded-xl glass-surface border border-[var(--glass-border)]">
+                          <div key={pi} className="p-3 rounded-xl border border-[#1a1a1a]">
                             <p className="font-medium text-foreground mb-1">{getShotLabel(scene, pi)}</p>
                             <p className="text-muted-foreground whitespace-pre-wrap leading-relaxed">{p}</p>
                           </div>
                         ));
                       } catch {
-                        return <pre className="p-3 rounded-xl glass-surface border border-[var(--glass-border)] whitespace-pre-wrap text-muted-foreground leading-relaxed">{scene.promptBase}</pre>;
+                        return <pre className="p-3 rounded-xl border border-[#1a1a1a] whitespace-pre-wrap text-muted-foreground leading-relaxed">{scene.promptBase}</pre>;
                       }
                     })()}
                   </div>
@@ -3009,8 +3600,8 @@ function GalleryView({
 
   if (completedImages.length === 0) {
     return (
-      <Card className="p-8 flex flex-col items-center justify-center glass-card rounded-2xl">
-        <div className="w-14 h-14 rounded-2xl glass-card flex items-center justify-center mb-4 animate-float">
+      <Card className="p-8 flex flex-col items-center justify-center rounded-lg">
+        <div className="w-14 h-14 rounded-lg flex items-center justify-center mb-4 animate-float">
           <Image className="w-7 h-7 text-muted-foreground" />
         </div>
         <h3 className="font-semibold mb-1">No images yet</h3>
@@ -3039,7 +3630,7 @@ function GalleryView({
         </p>
         <button
           onClick={onRefresh}
-          className="ghost-btn text-xs px-3.5 py-1.5"
+          className="flat-btn-ghost text-xs px-3.5 py-1.5"
           data-testid="button-refresh-gallery"
         >
           <RefreshCw className="w-3 h-3" />
@@ -3054,9 +3645,16 @@ function GalleryView({
 
           return (
             <div key={scene.id} className="scene-card">
-              <div className="flex items-center gap-2 mb-2 px-1">
-                <Badge variant="outline" className="text-[11px] glass-badge border-primary/15 rounded-lg font-medium">Scene {sceneIdx + 1}</Badge>
-                <p className="text-xs text-muted-foreground truncate">{scene.sceneDescription || scene.sentence}</p>
+              <div className="mb-3 px-1">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <Badge variant="outline" className="text-[11px] glass-badge border-primary/15 rounded-lg font-medium shrink-0">Scene {sceneIdx + 1}</Badge>
+                  {scene.sceneDescription && (
+                    <p className="text-xs text-muted-foreground truncate">{scene.sceneDescription}</p>
+                  )}
+                </div>
+                <div className="p-2.5 rounded-xl border border-[#1a1a1a] bg-white/[0.01]">
+                  <p className="text-xs leading-relaxed italic text-foreground/80">"{scene.sentence}"</p>
+                </div>
               </div>
               <div className="flex gap-2 overflow-x-auto pb-2">
                 {sceneCompletedImages.map((img) => {
@@ -3064,7 +3662,7 @@ function GalleryView({
                   return (
                     <div
                       key={img.id}
-                      className="relative shrink-0 w-56 aspect-video rounded-xl overflow-hidden bg-muted/30 cursor-pointer group border border-[var(--glass-border)] shadow-sm transition-all duration-300 hover:border-[var(--glass-highlight)] hover:shadow-lg hover:scale-[1.02]"
+                      className="relative shrink-0 w-56 aspect-video rounded-xl overflow-hidden bg-muted/30 cursor-pointer group border border-[#1a1a1a] shadow-sm transition-all duration-300 hover:border-[rgba(255,255,255,0.05)] hover:shadow-lg hover:scale-[1.02]"
                       onClick={() => setSelectedImage(img)}
                       data-testid={`gallery-image-${img.id}`}
                     >
@@ -3096,6 +3694,7 @@ function GalleryView({
                           onClick={(e) => { e.stopPropagation(); onRegenerateImage(img.id); }}
                           disabled={regeneratingImageId === img.id}
                           data-testid={`button-gallery-regen-${img.id}`}
+                          title="Regenerate this image"
                         >
                           {regeneratingImageId === img.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
                         </Button>
@@ -3109,6 +3708,7 @@ function GalleryView({
                                 onClick={(e) => e.stopPropagation()}
                                 disabled={videoGeneratingImageId === img.id}
                                 data-testid={`button-gallery-video-${img.id}`}
+                                title="Generate video from this image"
                               >
                                 {videoGeneratingImageId === img.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Video className="w-3 h-3" />}
                               </Button>
@@ -3133,6 +3733,7 @@ function GalleryView({
                                 className="h-6 w-6 bg-black/50 text-white/80 backdrop-blur-sm rounded-lg"
                                 onClick={(e) => e.stopPropagation()}
                                 disabled={videoGeneratingImageId === img.id}
+                                title="Regenerate video / remove clip"
                               >
                                 {videoGeneratingImageId === img.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
                               </Button>
@@ -3152,21 +3753,26 @@ function GalleryView({
                         ) : null}
                       </div>
                       {img.videoStatus === "generating" && (
-                        <div className="absolute top-1 left-1">
+                        <div className="absolute bottom-7 left-1 z-10">
                           <Badge variant="outline" className="text-[8px] bg-black/60 text-yellow-300 border-yellow-400/30 px-1 py-0 backdrop-blur-sm rounded-md" title={`Generating with ${VIDEO_MODELS.find(m => m.id === (img as any).videoModel)?.name || "unknown model"}`}>
                             <Loader2 className="w-2 h-2 animate-spin mr-0.5" />{VIDEO_MODELS.find(m => m.id === (img as any).videoModel)?.name || "Video"}
                           </Badge>
                         </div>
                       )}
                       {img.videoStatus === "failed" && (
-                        <div className="absolute top-1 left-1">
-                          <Badge variant="destructive" className="text-[8px] px-1 py-0 rounded-md cursor-help" title={(img as any).videoError || "Video generation failed"}>
-                            <Video className="w-2 h-2 mr-0.5" />Failed
+                        <div className="absolute bottom-7 left-1 right-1 z-10">
+                          <Badge variant="destructive" className="text-[8px] px-1 py-0 rounded-md cursor-pointer inline-flex" onClick={(e) => { e.stopPropagation(); setExpandedErrorId(expandedErrorId === `video-${img.id}` ? null : `video-${img.id}`); }}>
+                            <Video className="w-2 h-2 mr-0.5" />Video Failed
                           </Badge>
+                          {expandedErrorId === `video-${img.id}` && (img as any).videoError && (
+                            <div className="mt-1 p-1.5 bg-black/90 backdrop-blur-sm rounded-md border border-red-500/30 max-h-24 overflow-y-auto">
+                              <p className="text-[9px] text-red-300 leading-tight break-words">{(img as any).videoError}</p>
+                            </div>
+                          )}
                         </div>
                       )}
                       {img.videoStatus === "completed" && img.videoUrl && (
-                        <div className="absolute top-1 left-1">
+                        <div className="absolute bottom-7 left-1 z-10">
                           <Badge variant="outline" className="text-[8px] bg-black/60 text-green-400 border-green-400/30 px-1 py-0 backdrop-blur-sm rounded-md">
                             <Video className="w-2 h-2 mr-0.5" />Motion
                           </Badge>
@@ -3223,6 +3829,16 @@ function ClipsView({
 }) {
   const currentModel = VIDEO_MODELS.find(m => m.id === selectedVideoModel) || VIDEO_MODELS[0];
   const [playingClipId, setPlayingClipId] = useState<string | null>(null);
+  const [fullscreenClip, setFullscreenClip] = useState<GeneratedImage | null>(null);
+  const fullscreenOverlayRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!fullscreenClip) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") setFullscreenClip(null); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [fullscreenClip]);
+
   const [downloadState, setDownloadState] = useState<"idle" | "estimating" | "downloading">("idle");
   const [clipsInfo, setClipsInfo] = useState<{ totalClips: number; totalScenes: number; estimatedSizeMB: number } | null>(null);
   const { toast } = useToast();
@@ -3292,8 +3908,8 @@ function ClipsView({
   if (completedClips.length === 0 && generatingClips.length === 0) {
     return (
       <div className="space-y-4">
-        <Card className="p-8 flex flex-col items-center justify-center glass-card rounded-2xl">
-          <div className="w-14 h-14 rounded-2xl glass-card flex items-center justify-center mb-4 animate-float">
+        <Card className="p-8 flex flex-col items-center justify-center rounded-lg">
+          <div className="w-14 h-14 rounded-lg flex items-center justify-center mb-4 animate-float">
             <Video className="w-7 h-7 text-muted-foreground" />
           </div>
           <h3 className="font-semibold mb-1">No video clips yet</h3>
@@ -3312,6 +3928,62 @@ function ClipsView({
 
   return (
     <div className="space-y-4">
+      {fullscreenClip && (
+        <div
+          ref={fullscreenOverlayRef}
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-xl flex flex-col items-center justify-center"
+          onClick={(e) => { if (e.target === fullscreenOverlayRef.current) setFullscreenClip(null); }}
+          onKeyDown={(e) => { if (e.key === "Escape") setFullscreenClip(null); }}
+          tabIndex={0}
+        >
+          <button
+            className="absolute top-4 right-4 text-white/60 hover:text-white p-2 rounded-xl hover:bg-white/10 transition-all duration-200 z-10"
+            onClick={() => setFullscreenClip(null)}
+          >
+            <X className="w-6 h-6" />
+          </button>
+          <div className="w-full max-w-5xl px-6">
+            <video
+              src={proxyUrl(fullscreenClip.videoUrl)}
+              autoPlay
+              loop
+              controls
+              playsInline
+              className="w-full rounded-2xl shadow-2xl"
+            />
+            <div className="mt-4 flex items-center gap-3 justify-center">
+              {(() => {
+                const clipScene = scenes.find(s => s.id === fullscreenClip.sceneId);
+                const clipSceneIdx = clipScene ? scenes.indexOf(clipScene) : -1;
+                return (
+                  <>
+                    {clipSceneIdx >= 0 && <Badge variant="outline" className="text-xs rounded-lg">Scene {clipSceneIdx + 1}</Badge>}
+                    <span className="text-sm text-white/70">{getShotLabel(clipScene, fullscreenClip.variant - 1)}</span>
+                    {(fullscreenClip as any).videoModel && (
+                      <Badge variant="outline" className="text-xs bg-white/5 text-white/60 border-white/20 rounded-lg">
+                        {VIDEO_MODELS.find(m => m.id === (fullscreenClip as any).videoModel)?.name || (fullscreenClip as any).videoModel}
+                      </Badge>
+                    )}
+                    <a href={proxyUrl(fullscreenClip.videoUrl)} target="_blank" rel="noopener noreferrer" className="ml-2">
+                      <Button size="sm" variant="outline" className="glass-border rounded-xl text-xs hover:bg-[rgba(255,255,255,0.05)]">
+                        <Download className="w-3 h-3 mr-1" />Download
+                      </Button>
+                    </a>
+                  </>
+                );
+              })()}
+            </div>
+            {(() => {
+              const clipScene = scenes.find(s => s.id === fullscreenClip.sceneId);
+              return clipScene?.sentence ? (
+                <div className="mt-3 p-3 rounded-xl border border-white/10 bg-white/[0.02] max-w-3xl mx-auto">
+                  <p className="text-xs leading-relaxed italic text-white/60 text-center">"{clipScene.sentence}"</p>
+                </div>
+              ) : null;
+            })()}
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-3 flex-wrap">
           <p className="text-sm text-muted-foreground" data-testid="text-clips-count">
@@ -3333,7 +4005,7 @@ function ClipsView({
           <button
             onClick={handleDownloadClips}
             disabled={downloadState === "downloading" || downloadState === "estimating"}
-            className="ghost-btn text-xs disabled:opacity-50"
+            className="flat-btn-ghost text-xs disabled:opacity-50"
             data-testid="btn-download-clips"
           >
             {downloadState === "estimating" ? (
@@ -3371,7 +4043,7 @@ function ClipsView({
               const scene = scenes.find((s) => s.id === img.sceneId);
               const sceneIdx = scene ? scenes.indexOf(scene) : -1;
               return (
-                <Card key={img.id} className="overflow-hidden glass-card rounded-2xl" data-testid={`clip-generating-${img.id}`}>
+                <Card key={img.id} className="overflow-hidden rounded-lg" data-testid={`clip-generating-${img.id}`}>
                   <div className="relative aspect-video bg-muted/30">
                     {img.imageUrl && (
                       <img src={proxyUrl(img.imageUrl)} alt="Source frame" className="w-full h-full object-cover opacity-50" />
@@ -3407,7 +4079,7 @@ function ClipsView({
               const scene = scenes.find((s) => s.id === img.sceneId);
               const sceneIdx = scene ? scenes.indexOf(scene) : -1;
               return (
-                <Card key={img.id} className="overflow-hidden glass-card rounded-2xl" data-testid={`clip-failed-${img.id}`}>
+                <Card key={img.id} className="overflow-hidden rounded-lg" data-testid={`clip-failed-${img.id}`}>
                   <div className="relative aspect-video bg-muted/20">
                     {img.imageUrl && (
                       <img src={proxyUrl(img.imageUrl)} alt="Source frame" className="w-full h-full object-cover opacity-40" />
@@ -3425,7 +4097,7 @@ function ClipsView({
                       <button
                         onClick={() => onGenerateVideo(img.id)}
                         disabled={videoGeneratingImageId === img.id}
-                        className="ghost-btn text-xs px-3 py-1.5 disabled:opacity-50"
+                        className="flat-btn-ghost text-xs px-3 py-1.5 disabled:opacity-50"
                         data-testid={`button-clip-retry-${img.id}`}
                         title={`Retry with ${currentModel.name} ~${formatCost(currentModel.costPerClip)}`}
                       >
@@ -3457,10 +4129,10 @@ function ClipsView({
               const isPlaying = playingClipId === img.id;
 
               return (
-                <Card key={img.id} className="overflow-hidden glass-card rounded-2xl transition-all duration-300 hover:shadow-lg hover:scale-[1.01]" data-testid={`clip-completed-${img.id}`}>
+                <Card key={img.id} className="overflow-hidden rounded-lg transition-all duration-300 hover:shadow-lg" data-testid={`clip-completed-${img.id}`}>
                   <div
                     className="relative aspect-video bg-black cursor-pointer group"
-                    onClick={() => setPlayingClipId(isPlaying ? null : img.id)}
+                    onClick={() => setFullscreenClip(img)}
                     data-testid={`button-clip-play-${img.id}`}
                   >
                     {isPlaying ? (
@@ -3472,6 +4144,7 @@ function ClipsView({
                         playsInline
                         preload="auto"
                         className="w-full h-full object-contain"
+                        onClick={(e) => e.stopPropagation()}
                         data-testid={`video-clip-${img.id}`}
                       />
                     ) : (
@@ -3484,12 +4157,19 @@ function ClipsView({
                           decoding="async"
                         />
                         <div className="absolute inset-0 flex items-center justify-center transition-opacity duration-200">
-                          <div className="w-12 h-12 rounded-full bg-black/50 backdrop-blur-md border border-white/20 flex items-center justify-center invisible group-hover:visible transition-all duration-300 hover:scale-110 hover:bg-black/60 hover:border-white/30">
+                          <div className="w-12 h-12 rounded-full bg-black/50 border border-white/20 flex items-center justify-center invisible group-hover:visible transition-all duration-300 hover:scale-110 hover:bg-black/60 hover:border-white/30">
                             <Play className="w-5 h-5 text-white ml-0.5" />
                           </div>
                         </div>
                       </>
                     )}
+                    <button
+                      className="absolute bottom-1.5 left-1.5 h-6 w-6 bg-black/60 text-white/80 backdrop-blur-sm rounded-lg flex items-center justify-center invisible group-hover:visible transition-all hover:bg-black/80"
+                      onClick={(e) => { e.stopPropagation(); setPlayingClipId(isPlaying ? null : img.id); }}
+                      title={isPlaying ? "Stop preview" : "Preview inline"}
+                    >
+                      {isPlaying ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3 ml-px" />}
+                    </button>
                     <div className="absolute top-1.5 right-1.5 flex gap-1">
                       {(img as any).videoModel && (
                         <Badge variant="outline" className="text-[9px] bg-black/60 text-white border-white/30 px-1.5 py-0 backdrop-blur-sm rounded-md">
@@ -3509,7 +4189,7 @@ function ClipsView({
                       </div>
                       <div className="flex items-center gap-0.5">
                         <a href={proxyUrl(img.videoUrl)} target="_blank" rel="noopener noreferrer">
-                          <Button size="icon" variant="ghost" className="h-7 w-7 rounded-lg hover:bg-[var(--glass-highlight)]" data-testid={`button-clip-download-${img.id}`}>
+                          <Button size="icon" variant="ghost" className="h-7 w-7 rounded-lg hover:bg-[rgba(255,255,255,0.05)]" data-testid={`button-clip-download-${img.id}`}>
                             <Download className="w-3 h-3" />
                           </Button>
                         </a>
@@ -3524,9 +4204,9 @@ function ClipsView({
                         </Button>
                       </div>
                     </div>
-                    {scene?.sceneDescription && (
-                      <p className="text-xs text-muted-foreground/60 mt-1 line-clamp-1 leading-relaxed">
-                        {scene.sceneDescription}
+                    {scene?.sentence && (
+                      <p className="text-xs text-muted-foreground/60 mt-1 line-clamp-2 leading-relaxed italic">
+                        "{scene.sentence}"
                       </p>
                     )}
                     {((img as any).videoPromptSent || img.videoPrompt) && (
@@ -3534,7 +4214,7 @@ function ClipsView({
                         <summary className="text-[10px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors font-medium">
                           View video prompt
                         </summary>
-                        <div className="mt-1.5 p-2.5 rounded-xl glass-surface border border-[var(--glass-border)] text-[10px] text-muted-foreground max-h-32 overflow-y-auto">
+                        <div className="mt-1.5 p-2.5 rounded-xl border border-[#1a1a1a] text-[10px] text-muted-foreground max-h-32 overflow-y-auto">
                           {(img as any).videoPromptSent ? (
                             <p className="whitespace-pre-wrap leading-relaxed">{(img as any).videoPromptSent}</p>
                           ) : (
@@ -3658,7 +4338,7 @@ function Lightbox({
         <X className="w-5 h-5" />
       </button>
 
-      <div className="absolute top-4 left-4 text-white/40 text-sm glass-surface px-3.5 py-1.5 rounded-xl border border-white/[0.06] backdrop-blur-xl" data-testid="text-lightbox-counter">
+      <div className="absolute top-4 left-4 text-white/40 text-sm px-3.5 py-1.5 rounded-xl border border-white/[0.06] backdrop-blur-xl" data-testid="text-lightbox-counter">
         {currentIndex + 1} / {images.length}
       </div>
 
@@ -3692,18 +4372,18 @@ function Lightbox({
             muted
             playsInline
             preload="auto"
-            className="max-h-[75vh] w-auto max-w-full rounded-2xl shadow-2xl ring-1 ring-white/[0.06]"
+            className="max-h-[75vh] w-auto max-w-full rounded-lg shadow-2xl ring-1 ring-white/[0.06]"
             data-testid="video-lightbox"
           />
         ) : (
           <img
             src={proxyUrl(selectedImage.imageUrl)}
             alt={scene?.sentence || "Generated image"}
-            className="max-h-[75vh] w-auto max-w-full rounded-2xl object-contain shadow-2xl ring-1 ring-white/[0.06]"
+            className="max-h-[75vh] w-auto max-w-full rounded-lg object-contain shadow-2xl ring-1 ring-white/[0.06]"
             data-testid="img-lightbox"
           />
         )}
-        <div className="mt-4 w-full max-w-3xl px-4 glass-surface rounded-2xl border border-white/[0.06] p-4 backdrop-blur-xl">
+        <div className="mt-4 w-full max-w-3xl px-4 rounded-lg border border-white/[0.06] p-4 backdrop-blur-xl">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div className="min-w-0 flex-1">
               {sceneIdx >= 0 && (
@@ -3846,7 +4526,7 @@ function Lightbox({
               />
               <div className="flex gap-2 mt-2">
                 <button
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold gradient-btn text-white border-0 transition-all duration-200 active:scale-[0.98] disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-primary text-white border-0 transition-all duration-200 disabled:opacity-50"
                   onClick={() => { onRegenerateImage(selectedImage.id, feedbackText); setShowFeedback(false); setFeedbackText(""); }}
                   disabled={!feedbackText.trim()}
                 >
@@ -3874,7 +4554,7 @@ function Lightbox({
               />
               <div className="flex gap-2 mt-2">
                 <button
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-400/20 transition-all duration-200 active:scale-[0.98] disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-400/20 transition-all duration-200 disabled:opacity-50"
                   onClick={() => { onRegenerateVideoWithFeedback(selectedImage.id, videoFeedbackText, lightboxModel); setShowVideoFeedback(false); setVideoFeedbackText(""); }}
                   disabled={!videoFeedbackText.trim() || videoGeneratingImageId === selectedImage.id}
                 >

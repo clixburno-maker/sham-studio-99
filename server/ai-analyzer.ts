@@ -1,15 +1,14 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { ScriptAnalysis } from "@shared/schema";
 
-const defaultAnthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
-
 function getAnthropicClient(userApiKey?: string): Anthropic {
-  if (userApiKey) {
-    return new Anthropic({ apiKey: userApiKey });
+  const key = userApiKey || process.env.ANTHROPIC_API_KEY;
+  if (!key) {
+    throw new Error(
+      "No Anthropic API key found. Please enter your API key in Settings (gear icon) or set the ANTHROPIC_API_KEY environment variable."
+    );
   }
-  return defaultAnthropic;
+  return new Anthropic({ apiKey: key });
 }
 
 export interface StoryBible {
@@ -62,6 +61,20 @@ export interface SceneSequencePrompts {
   transitionNote: string;
 }
 
+export interface DirectorsShotPlanEntry {
+  sceneIndex: number;
+  primaryAngle: string;
+  shotScale: string;
+  isHeroShot: boolean;
+  isEstablishing: boolean;
+  rhythmNote: string;
+  avoidAngles: string[];
+  suggestedTechniques: string[];
+  recommendedImageCount: { min: number; max: number };
+}
+
+export type DirectorsShotPlan = DirectorsShotPlanEntry[];
+
 interface CumulativeVisualMemory {
   sceneSummaries: string[];
   lastCharacterStates: Record<string, string>;
@@ -93,7 +106,7 @@ function buildCumulativeMemory(
     emotionalArc: [],
   };
 
-  const lookback = Math.min(currentIndex, 5);
+  const lookback = Math.min(currentIndex, 12);
   const startIdx = currentIndex - lookback;
 
   for (let i = startIdx; i < currentIndex; i++) {
@@ -470,6 +483,21 @@ export function validateAndFillSentenceCoverage(
     for (let i = 0; i < gap.length; i += chunkSize) {
       const indices = gap.slice(i, i + chunkSize);
       const gapSentences = indices.map(idx => sentences[idx]);
+      const combinedText = gapSentences.join(" ").toLowerCase();
+
+      const matchedCharacters = (analysis.characters || [])
+        .filter((c: any) => c.name && combinedText.includes(c.name.toLowerCase()))
+        .map((c: any) => c.name);
+      const matchedAircraft = (analysis.jets || [])
+        .filter((j: any) => j.name && combinedText.includes(j.name.toLowerCase()))
+        .map((j: any) => j.name);
+      const matchedVehicles = (analysis.vehicles || [])
+        .filter((v: any) => v.name && combinedText.includes(v.name.toLowerCase()))
+        .map((v: any) => v.name);
+      const matchedObjects = (analysis.keyObjects || [])
+        .filter((o: any) => o.name && combinedText.includes(o.name.toLowerCase()))
+        .map((o: any) => o.name);
+
       fillScenes.push({
         sentenceIndices: indices,
         sentences: gapSentences,
@@ -479,10 +507,10 @@ export function validateAndFillSentenceCoverage(
         mood: "Cinematic",
         timeOfDay: analysis.timePeriod || "Day",
         location: analysis.setting || "Unspecified",
-        charactersPresent: analysis.characters?.map((c: any) => c.name) || [],
-        aircraftPresent: analysis.jets?.map((j: any) => j.name) || [],
-        vehiclesPresent: (analysis.vehicles || []).map((v: any) => v.name) || [],
-        keyObjectsPresent: (analysis.keyObjects || []).map((o: any) => o.name) || [],
+        charactersPresent: matchedCharacters.length > 0 ? matchedCharacters : (analysis.characters?.slice(0, 2).map((c: any) => c.name) || []),
+        aircraftPresent: matchedAircraft,
+        vehiclesPresent: matchedVehicles,
+        keyObjectsPresent: matchedObjects,
         lightingNote: analysis.visualStyle?.lighting || "Cinematic lighting",
         weatherConditions: "",
       });
@@ -625,7 +653,7 @@ export function parseStoryBibleResult(text: string): StoryBible {
   };
 }
 
-async function analyzeStoryBibleOnly(script: string, userApiKey?: string): Promise<StoryBible> {
+export async function analyzeStoryBibleOnly(script: string, userApiKey?: string): Promise<StoryBible> {
   const params = buildStoryBibleParams(script);
   const stream = getAnthropicClient(userApiKey).messages.stream(params);
 
@@ -794,6 +822,12 @@ export function parseVisualScenesChunkResult(
         indices.push(j);
         sents.push(sentences[j]);
       }
+      const fbText = sents.join(" ").toLowerCase();
+      const fbAnalysis = storyBible.analysis;
+      const fbChars = (fbAnalysis.characters || []).filter((c: any) => c.name && fbText.includes(c.name.toLowerCase())).map((c: any) => c.name);
+      const fbJets = (fbAnalysis.jets || []).filter((j: any) => j.name && fbText.includes(j.name.toLowerCase())).map((j: any) => j.name);
+      const fbVehicles = (fbAnalysis.vehicles || []).filter((v: any) => v.name && fbText.includes(v.name.toLowerCase())).map((v: any) => v.name);
+      const fbObjects = (fbAnalysis.keyObjects || []).filter((o: any) => o.name && fbText.includes(o.name.toLowerCase())).map((o: any) => o.name);
       fallbackScenes.push({
         sentenceIndices: indices,
         sentences: sents,
@@ -803,10 +837,10 @@ export function parseVisualScenesChunkResult(
         mood: "Cinematic",
         timeOfDay: storyBible.analysis.timePeriod || "Day",
         location: storyBible.analysis.setting || "Unspecified",
-        charactersPresent: storyBible.analysis.characters?.map((c: any) => c.name) || [],
-        aircraftPresent: storyBible.analysis.jets?.map((j: any) => j.name) || [],
-        vehiclesPresent: (storyBible.analysis.vehicles || []).map((v: any) => v.name) || [],
-        keyObjectsPresent: (storyBible.analysis.keyObjects || []).map((o: any) => o.name) || [],
+        charactersPresent: fbChars.length > 0 ? fbChars : (fbAnalysis.characters?.slice(0, 2).map((c: any) => c.name) || []),
+        aircraftPresent: fbJets,
+        vehiclesPresent: fbVehicles,
+        keyObjectsPresent: fbObjects,
         lightingNote: storyBible.analysis.visualStyle?.lighting || "Cinematic lighting",
         weatherConditions: "",
       });
@@ -837,7 +871,7 @@ export function parseVisualScenesChunkResult(
   }));
 }
 
-async function analyzeVisualScenesChunk(
+export async function analyzeVisualScenesChunk(
   script: string,
   sentences: string[],
   startIndex: number,
@@ -1062,6 +1096,11 @@ export function parseFullStoryResult(text: string, sentences: string[]): { story
     for (let i = 0; i < sentences.length; i += chunkSize) {
       const chunk = sentences.slice(i, i + chunkSize);
       const indices = chunk.map((_, j) => i + j);
+      const fbText2 = chunk.join(" ").toLowerCase();
+      const fbChars2 = (analysis.characters || []).filter((c: any) => c.name && fbText2.includes(c.name.toLowerCase())).map((c: any) => c.name);
+      const fbJets2 = (analysis.jets || []).filter((j: any) => j.name && fbText2.includes(j.name.toLowerCase())).map((j: any) => j.name);
+      const fbVehicles2 = (analysis.vehicles || []).filter((v: any) => v.name && fbText2.includes(v.name.toLowerCase())).map((v: any) => v.name);
+      const fbObjects2 = (analysis.keyObjects || []).filter((o: any) => o.name && fbText2.includes(o.name.toLowerCase())).map((o: any) => o.name);
       visualScenes.push({
         sentenceIndices: indices,
         sentences: chunk,
@@ -1071,10 +1110,10 @@ export function parseFullStoryResult(text: string, sentences: string[]): { story
         mood: "Cinematic",
         timeOfDay: analysis.timePeriod || "Day",
         location: analysis.setting || "Unspecified",
-        charactersPresent: analysis.characters?.map((c: any) => c.name) || [],
-        aircraftPresent: analysis.jets?.map((j: any) => j.name) || [],
-        vehiclesPresent: (analysis.vehicles || []).map((v: any) => v.name) || [],
-        keyObjectsPresent: (analysis.keyObjects || []).map((o: any) => o.name) || [],
+        charactersPresent: fbChars2.length > 0 ? fbChars2 : (analysis.characters?.slice(0, 2).map((c: any) => c.name) || []),
+        aircraftPresent: fbJets2,
+        vehiclesPresent: fbVehicles2,
+        keyObjectsPresent: fbObjects2,
         lightingNote: analysis.visualStyle?.lighting || "Cinematic lighting",
         weatherConditions: "",
       });
@@ -1149,6 +1188,160 @@ export async function analyzeFullStory(
   return parseFullStoryResult(content.text, sentences);
 }
 
+export function buildDirectorsShotPlanParams(
+  visualScenes: VisualScene[],
+  storyBible: StoryBible,
+) {
+  const analysis = storyBible.analysis;
+
+  const sceneSummaries = visualScenes.map((vs, i) => {
+    const totalScenes = visualScenes.length;
+    const position = i / totalScenes;
+    const phase = position < 0.15 ? "OPENING" : position < 0.35 ? "RISING" : position < 0.55 ? "ESCALATION" : position < 0.75 ? "CLIMAX" : position < 0.9 ? "FALLING" : "RESOLUTION";
+    const locationChanged = i > 0 && vs.location !== visualScenes[i - 1].location;
+    return `Scene ${i + 1} [${phase}]${locationChanged ? " [NEW LOCATION]" : ""}: "${vs.visualBeat}" | Location: ${vs.location} | Mood: ${vs.mood} | Characters: ${vs.charactersPresent.join(", ") || "none"} | Dramatic purpose: ${vs.dramaticPurpose || "STANDARD"}`;
+  }).join("\n");
+
+  const content = `You are an elite film director planning the cinematography for an entire story. You must create a SHOT PLAN that ensures maximum visual variety, creative camera work, and cinematic storytelling across ALL scenes.
+
+STORY OVERVIEW:
+Genre/Style: ${analysis.visualStyle.baseStyle}
+Total scenes: ${visualScenes.length}
+Narrative arc: ${storyBible.narrativeArc.opening} → ${storyBible.narrativeArc.rising} → ${storyBible.narrativeArc.climax} → ${storyBible.narrativeArc.resolution}
+
+ALL SCENES:
+${sceneSummaries}
+
+YOUR TASK — Create a per-scene shot plan with these STRICT rules:
+
+ANGLE DIVERSITY RULES (NON-NEGOTIABLE):
+1. NO two consecutive scenes may share the same primaryAngle. If scene 5 uses "Low angle hero shot", scene 6 MUST use something different.
+2. Track the last 4 angles used. The avoidAngles array for each scene MUST list these so the prompt generator knows what NOT to repeat.
+3. Use the FULL creative range — not just "medium shot" and "wide shot". Include: Dutch angle, bird's eye, worm's eye, POV, over-the-shoulder, tracking, crane, ground-level, through-object, reflection, split diopter, dolly zoom, silhouette, overhead.
+4. Vary lenses too — mention specific mm (14mm, 24mm, 35mm, 50mm, 85mm, 135mm, anamorphic).
+
+SHOT SCALE RHYTHM:
+- Alternate between WIDE, MEDIUM, CLOSE, and MIXED across consecutive scenes.
+- After 2 close/medium scenes, force a WIDE establishing.
+- After an intense close sequence, pull back to a breathing wide shot.
+
+HERO SHOTS:
+- Mark scenes at dramatic peaks (CLIMAX, major REVEAL, key emotional moments) as hero shots.
+- Hero shots deserve the most creative and impactful camera angle.
+- Limit hero shots to roughly 15-20% of total scenes — they lose impact if overused.
+
+ESTABLISHING SHOTS:
+- ANY scene where the location changes from the previous scene MUST be marked as establishing.
+- The first scene is ALWAYS establishing.
+
+RHYTHM NOTES:
+- Describe the visual rhythm transition from the previous scene. Examples: "Open wide after tight claustrophobic sequence", "Match the energy — stay close and intense", "Contrast: pull way back to show insignificance after intimate moment", "Slow the pace — contemplative drifting camera after action".
+
+SUGGESTED TECHNIQUES:
+- 2-4 specific cinematic techniques per scene, chosen to serve that scene's dramatic purpose and mood. Examples: "Frame through cockpit struts for entrapment", "Use negative space for isolation", "Split composition for moral dilemma", "Rack focus from instrument to pilot's face", "Low angle with sky behind for heroic moment".
+
+IMAGE COUNT BUDGET (recommendedImageCount):
+The PRIMARY factor is SENTENCE LENGTH. Count the words in the scene's sentence(s). Then adjust based on content type.
+
+STEP 1 — BASE COUNT FROM SENTENCE LENGTH:
+- Very short (1-8 words): {"min": 2, "max": 3}
+- Short (9-18 words): {"min": 2, "max": 4}
+- Medium (19-35 words): {"min": 3, "max": 5}
+- Long (36-60 words): {"min": 4, "max": 7}
+- Very long (60+ words): {"min": 5, "max": 8}
+
+STEP 2 — CONTENT MULTIPLIER (only increases, never decreases):
+- Quiet emotion / facial expression / internal thought → use the MINIMUM from Step 1
+- Dialogue / narration / establishing → use Step 1 as-is
+- Fight scene / battle / chase / explosion / complex action → multiply max by 1.5x (up to max 12)
+- Climax / hero moment with multiple characters in action → multiply max by 1.5x (up to max 12)
+
+EXAMPLES:
+- "His face does not tighten." (6 words, quiet) → 2 images
+- "The soldiers charged across the open field under heavy fire." (10 words, fight) → 4-6 images
+- "Dawn broke over the ridge." (5 words, establishing) → 2-3 images
+- A 50-word paragraph describing an intense dogfight with multiple aircraft → 7-12 images
+
+CRITICAL: Short sentences = few images. ALWAYS. The only exception is if a short sentence describes intense action (fight/battle), then add a few more. But "His jaw does not set" is NEVER more than 2-3 images regardless of mood or dramatic importance.
+
+Return JSON only (no markdown, no code fences):
+{
+  "plan": [
+    {
+      "sceneIndex": 0,
+      "primaryAngle": "Sweeping crane establishing shot, 24mm wide lens",
+      "shotScale": "WIDE",
+      "isHeroShot": false,
+      "isEstablishing": true,
+      "rhythmNote": "Opening — establish the world with scope and atmosphere",
+      "avoidAngles": [],
+      "suggestedTechniques": ["Environmental framing through foreground elements", "Golden hour lighting sweep", "Slow reveal of location scale"],
+      "recommendedImageCount": {"min": 3, "max": 5}
+    }
+  ]
+}
+
+The plan array MUST have exactly ${visualScenes.length} entries, one per scene, in order.`;
+
+  return {
+    model: "claude-sonnet-4-20250514" as const,
+    max_tokens: 16000,
+    messages: [
+      { role: "user" as const, content },
+    ],
+  };
+}
+
+export async function generateDirectorsShotPlan(
+  visualScenes: VisualScene[],
+  storyBible: StoryBible,
+  userApiKey?: string,
+): Promise<DirectorsShotPlan> {
+  const params = buildDirectorsShotPlanParams(visualScenes, storyBible);
+  const client = getAnthropicClient(userApiKey);
+  const stream = client.messages.stream(params);
+  const message = await stream.finalMessage();
+  const content = message.content[0];
+  if (content.type !== "text") throw new Error("Unexpected response type from Claude");
+
+  let parsed: any;
+  try {
+    parsed = parseJsonResponse(content.text);
+  } catch {
+    console.warn("[directors-shot-plan] JSON parse failed, attempting repair...");
+    parsed = repairTruncatedJson(content.text);
+  }
+
+  if (!parsed?.plan || !Array.isArray(parsed.plan)) {
+    console.warn("[directors-shot-plan] Invalid plan structure, generating fallback plan");
+    return visualScenes.map((_, i) => ({
+      sceneIndex: i,
+      primaryAngle: i % 5 === 0 ? "Wide establishing shot, 24mm" : i % 5 === 1 ? "Medium tracking shot, 35mm" : i % 5 === 2 ? "Close-up, 85mm" : i % 5 === 3 ? "Low angle, 50mm" : "Over-the-shoulder, 50mm",
+      shotScale: i % 4 === 0 ? "WIDE" : i % 4 === 1 ? "MEDIUM" : i % 4 === 2 ? "CLOSE" : "MIXED",
+      isHeroShot: false,
+      isEstablishing: i === 0 || (i > 0 && visualScenes[i].location !== visualScenes[i - 1].location),
+      rhythmNote: "",
+      avoidAngles: [],
+      suggestedTechniques: [],
+      recommendedImageCount: { min: 3, max: 6 },
+    }));
+  }
+
+  return parsed.plan.map((entry: any, i: number) => ({
+    sceneIndex: entry.sceneIndex ?? i,
+    primaryAngle: entry.primaryAngle || "Medium cinematic shot",
+    shotScale: entry.shotScale || "MIXED",
+    isHeroShot: !!entry.isHeroShot,
+    isEstablishing: !!entry.isEstablishing,
+    rhythmNote: entry.rhythmNote || "",
+    avoidAngles: Array.isArray(entry.avoidAngles) ? entry.avoidAngles : [],
+    suggestedTechniques: Array.isArray(entry.suggestedTechniques) ? entry.suggestedTechniques : [],
+    recommendedImageCount: entry.recommendedImageCount && typeof entry.recommendedImageCount === "object"
+      ? { min: entry.recommendedImageCount.min || 2, max: entry.recommendedImageCount.max || 6 }
+      : { min: 3, max: 6 },
+  }));
+}
+
 export function buildSequencePromptParams(
   scene: VisualScene,
   sceneIndex: number,
@@ -1157,6 +1350,7 @@ export function buildSequencePromptParams(
   prevScene: VisualScene | null,
   nextScene: VisualScene | null,
   allScenes: VisualScene[],
+  directorsPlan?: DirectorsShotPlanEntry,
 ) {
   const analysis = storyBible.analysis;
 
@@ -1329,20 +1523,52 @@ GLOBAL VISUAL STYLE (apply to ALL prompts):
 - Atmosphere: ${analysis.visualStyle.atmosphere}
 - Weather progression: ${analysis.visualStyle.weatherProgression || "Consistent with scene context"}
 
-╔═══════════════════════════════════════════════════════════════╗
+${directorsPlan ? `╔═══════════════════════════════════════════════════════════════╗
+║  DIRECTOR'S SHOT PLAN — FOLLOW THIS CREATIVE DIRECTION       ║
+╚═══════════════════════════════════════════════════════════════╝
+
+The Director has planned the cinematography for the ENTIRE story to ensure visual variety and creative storytelling. You MUST follow these directives for this scene:
+
+PRIMARY CAMERA ANGLE FOR THIS SCENE: ${directorsPlan.primaryAngle}
+SHOT SCALE: ${directorsPlan.shotScale}
+${directorsPlan.isHeroShot ? "★ THIS IS A HERO SHOT — Give this scene your most impactful, creative, and visually stunning treatment. This is a key dramatic moment that deserves a signature visual." : ""}
+${directorsPlan.isEstablishing ? "★ ESTABLISHING SHOT REQUIRED — The first image MUST be a wide establishing shot that clearly shows the new location/environment before moving into closer shots." : ""}
+${directorsPlan.rhythmNote ? `VISUAL RHYTHM: ${directorsPlan.rhythmNote}` : ""}
+${directorsPlan.avoidAngles.length > 0 ? `DO NOT REPEAT THESE RECENTLY USED ANGLES: ${directorsPlan.avoidAngles.join(", ")}. Choose something DIFFERENT from these — the audience has already seen these angles in recent scenes and needs visual freshness.` : ""}
+${directorsPlan.suggestedTechniques.length > 0 ? `RECOMMENDED TECHNIQUES FOR THIS SCENE:\n${directorsPlan.suggestedTechniques.map(t => `- ${t}`).join("\n")}` : ""}
+IMAGE BUDGET: The Director recommends ${directorsPlan.recommendedImageCount.min}-${directorsPlan.recommendedImageCount.max} images for this scene based on its dramatic importance in the overall story. ${directorsPlan.isHeroShot ? "As a hero/climax scene, lean toward the HIGHER end of this range." : "Stay within this range — DO NOT EXCEED the max. Images are costly ($0.12-$0.19 each). Be efficient."}
+
+While you must use the primary angle as your DOMINANT approach for this scene, you should still vary individual shot angles within the scene for dynamic storytelling. The primary angle is your ANCHOR — start from there and build around it.
+
+` : ""}╔═══════════════════════════════════════════════════════════════╗
 ║  SECTION 4: YOUR TASK                                        ║
 ╚═══════════════════════════════════════════════════════════════╝
 
 IMPORTANT: Read the script text in Section 2 CAREFULLY. Your images must illustrate what the script ACTUALLY SAYS — not what you imagine or invent. Every image should be traceable to a specific sentence or phrase from the script. If the script describes a pilot walking across a flight deck, show THAT. Do not substitute a different action.
 
-Decide how many images this scene needs (minimum 3, maximum 17):
-- Quick transition, single-action moment, or simple establishing beat: 3-5 images
-- Standard scene with dialogue, clear action, or moderate emotional content: 6-9 images
-- Complex action sequence, battle, chase, or major dramatic turning point: 10-13 images
-- Epic climax, elaborate set piece, or emotionally devastating moment with many characters/elements: 14-17 images
-- CRITICAL: Every important sentence, phrase, or story beat in the script text MUST be captured in at least one image. Do NOT skip or gloss over ANY part of the script. If the script mentions a specific action, reaction, object, or detail — it MUST appear in an image.
-- Include B-roll, reaction shots, detail inserts, environmental cutaways, POV shots, establishing shots
-- Think like an editor — what shots does the audience NEED to understand and FEEL this moment?
+Decide how many images this scene needs. The PRIMARY factor is SENTENCE LENGTH — count the words first, then adjust for content.
+
+STEP 1 — COUNT THE WORDS in the script text for this scene:
+- Very short sentence (1-8 words): 2-3 images MAX
+- Short sentence (9-18 words): 2-4 images
+- Medium sentence (19-35 words): 3-5 images
+- Long sentence (36-60 words): 4-7 images
+- Very long / multiple sentences (60+ words): 5-8 images
+
+STEP 2 — ADJUST FOR CONTENT TYPE:
+- Quiet emotion / facial expression / internal state → stay at MINIMUM from Step 1
+- Dialogue / narration / establishing → use Step 1 range as-is
+- Fight / battle / chase / explosion / action → add 2-4 extra images on top of Step 1 (up to max 12)
+
+COST-AWARENESS — IMAGES ARE EXPENSIVE ($0.12-$0.19 each):
+- "His face does not change" (6 words) = 2 images. Period. Not 13.
+- "The soldiers charged across the field under heavy fire" (9 words, action) = 4-6 images.
+- A 50-word paragraph describing an intense dogfight = 8-12 images.
+- Short sentence + quiet emotion = ALWAYS 2-3 images. No exceptions.
+- NEVER create more than 3 images for a sentence under 10 words unless it describes physical action.
+- DO create many images for fight scenes, battles, and complex action — that's where the budget belongs.
+
+KEY STORY BEATS: Every distinct visual moment should be captured, but ONE good shot per beat is enough. Don't create 5 variations of the same face from slightly different angles.
 
 SENTENCE-TO-IMAGE MAPPING (CRITICAL — DO NOT SKIP STORY MOMENTS):
 Before deciding your shot list, go through EACH sentence in the script text and ask:
@@ -1532,7 +1758,7 @@ Return JSON only (no markdown, no code fences):
   "cameraAngle": "Overall cinematography approach and why it serves the story",
   "transitionNote": "How the last image visually bridges to the next scene",
   "shotLabels": ["Short descriptive label for each shot"],
-  "motionPrompts": ["IMPORTANT: These prompts will be sent to an image-to-video AI model that animates a STILL IMAGE into a short video clip (5-8 seconds). The model receives ONE frozen frame and must add motion to it. Write 2-3 sentences, max 50 words. Structure: CAMERA MOVE + SUBJECT MOTION + ATMOSPHERE. CAMERA: Choose ONE smooth camera move (slow dolly in, gentle crane up, steady tracking left, subtle push-in, slow pull-back, smooth orbit). Avoid fast or complex camera work. SUBJECT MOTION must describe ONLY what is already visible in the image continuing its natural motion — aircraft maintaining flight path with control surface micro-adjustments, propeller blur continuing to spin, ship holding course with bow cutting waves. NEVER describe events that would change the composition (crashes, explosions starting, new objects appearing, takeoffs, landings). ATMOSPHERE: ONE environmental motion detail (exhaust heat shimmer, clouds drifting slowly, gentle wave motion, smoke wisping). CRITICAL ANTI-MORPHING RULES: Never describe the subject changing shape, transforming, or doing anything that would require the AI to redraw it. If a jet is shown, it must remain the EXACT same jet design — same wing shape, same engine count, same paint scheme. Describe the jet as 'maintaining steady flight' not 'banking hard' which causes the model to redraw wings. Keep all motion GENTLE and CONTINUOUS, not sudden. NO dialogue, NO narration, NO text, NO sound descriptions."],
+  "motionPrompts": ["IMPORTANT — EACH MOTION PROMPT MUST BE UNIQUE AND CONTEXTUAL TO ITS CORRESPONDING IMAGE. These prompts animate a STILL IMAGE into a short video clip (5-8 seconds). The model receives ONE frozen frame and must add motion to it. Write 3-5 sentences, max 80 words per prompt. EVERY motion prompt MUST be DIFFERENT from the others — each one describes what is happening in THAT specific image based on the story moment it captures. START each prompt with a brief context phrase about what this shot depicts in the story (e.g., 'A tense cockpit moment as the pilot scans the horizon —' or 'The aftermath of the ambush with smoke still rising —' or 'A quiet dawn over the airfield before the mission begins —'). Then describe: CAMERA MOVE suited to the emotional tone of this specific moment (tense = slow creeping push-in, epic = confident tracking, quiet = near-static with drift, chaotic = subtle handheld feel). SUBJECT MOTION: what is already visible in the image continuing its natural motion appropriate to the story beat. ATMOSPHERE: environmental motion details specific to what is shown in THIS image. ANTI-MORPHING RULES: Never describe subjects changing shape, transforming, or doing anything requiring the AI to redraw them. Keep all motion GENTLE and CONTINUOUS. NO dialogue, NO narration, NO text, NO sound descriptions."],
   "prompts": ["Full ultra-detailed prompt for each image — NO word limit, write as much as needed"]
 }
 
@@ -1576,7 +1802,14 @@ export function parseSequencePromptResult(text: string, scene: VisualScene, scen
   let motionPrompts: string[] = result.motionPrompts || [];
   if (motionPrompts.length < prompts.length) {
     while (motionPrompts.length < prompts.length) {
-      motionPrompts.push("Cinematic slow camera motion with subtle parallax depth, smooth atmospheric movement");
+      const idx = motionPrompts.length;
+      const imgPrompt = prompts[idx] || "";
+      const briefContext = imgPrompt.substring(0, 120).replace(/[.,;:]$/, "");
+      motionPrompts.push(
+        briefContext
+          ? `Scene depicting: ${briefContext}... — Gentle cinematic camera motion with subtle atmospheric movement suited to this moment.`
+          : "Cinematic slow camera motion with subtle parallax depth, smooth atmospheric movement"
+      );
     }
   }
   motionPrompts = motionPrompts.slice(0, promptCount);
@@ -1789,6 +2022,62 @@ Return ONLY the new prompt text. No JSON, no explanation, no markdown. Just the 
   return improvedPrompt;
 }
 
+export async function rewriteSafePrompt(
+  originalPrompt: string,
+  errorMessage: string,
+  userApiKey?: string,
+): Promise<string> {
+  const stream = getAnthropicClient(userApiKey).messages.stream({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 8000,
+    messages: [
+      {
+        role: "user",
+        content: `You are an expert prompt engineer. An image generation prompt was REJECTED by the AI image model's safety filter.
+
+REJECTED PROMPT:
+"""
+${originalPrompt}
+"""
+
+REJECTION ERROR:
+"""
+${errorMessage}
+"""
+
+REWRITE this prompt so it will NOT be rejected, while keeping the EXACT SAME visual scene, composition, characters, camera angle, lighting, mood, and artistic intent. Rules:
+
+1. REMOVE or REPHRASE any violence, weapons, combat, gore, blood, death, nudity, drugs, or other unsafe content
+2. Replace military/combat actions with neutral alternatives (e.g. "firing weapons" → "standing at the ready", "explosion" → "dramatic cloud of dust and debris", "battle" → "tense standoff", "gun" → "equipment")
+3. Keep ALL character descriptions, clothing, appearance details, and visual identity EXACTLY the same
+4. Keep the same camera angle, composition, lighting, color palette, and atmosphere
+5. Keep the same environment, location, time of day, and weather
+6. Maintain the dramatic and emotional tone through body language, facial expressions, and environmental mood — NOT through violent actions
+7. The rewritten prompt should be the same length and level of detail as the original
+8. Start with the same style opening (e.g. "Unreal Engine 5 cinematic..." if original has it)
+
+Return ONLY the rewritten prompt. No JSON, no explanation, no markdown.`,
+      },
+    ],
+  });
+
+  const message = await stream.finalMessage();
+  const content = message.content[0];
+  if (content.type !== "text") {
+    throw new Error("Unexpected response type from Claude");
+  }
+
+  let safePrompt = content.text.trim();
+  if (safePrompt.startsWith('"') && safePrompt.endsWith('"')) {
+    safePrompt = safePrompt.slice(1, -1);
+  }
+  if (safePrompt.startsWith("```")) {
+    safePrompt = safePrompt.replace(/```\w*\n?/g, "").trim();
+  }
+
+  return safePrompt;
+}
+
 export async function applyFeedbackToPrompt(
   originalPrompt: string,
   userFeedback: string,
@@ -1847,40 +2136,44 @@ export async function applyFeedbackToPrompt(
     }
   }
 
+  const systemPrompt = `You are an expert prompt engineer who modifies image generation prompts based on user feedback. You MUST faithfully apply what the user asks for.
+
+CORE RULES:
+
+1. APPLY THE FEEDBACK FULLY: The user's feedback is your primary directive. If they say "make it a bird's eye view", rewrite the entire camera/composition section to be a bird's eye view. If they say "make it darker and more dramatic", change lighting, mood, color grading throughout the prompt. Do NOT under-apply — the user expects to see a VISIBLE DIFFERENCE in the regenerated image.
+
+2. SUBJECT IDENTITY LOCK: Characters, aircraft, vehicles, and locations keep their identity descriptions (appearance, visual DNA, signature features) UNLESS the user explicitly asks to change them.
+
+3. PRESERVE UNRELATED SECTIONS: Parts of the prompt that have nothing to do with the feedback should stay intact. Don't randomly rewrite sections the user didn't mention.
+
+4. MAINTAIN PROMPT LENGTH: Your output should be approximately the same length as the original. Don't shorten or condense — the detail level matters for image generation quality.
+
+5. ERA AND CONTEXT LOCK: Keep the historical era and setting unless feedback explicitly changes it.
+
+6. STYLE: Maintain "Unreal Engine 5 cinematic 3D render" style unless feedback says otherwise.
+
+${isCharacterPortrait ? "7. PORTRAIT FORMAT: This is a CHARACTER REFERENCE PORTRAIT — maintain portrait format unless feedback specifically changes framing.\n" : ""}
+IMPORTANT: The user's feedback takes PRIORITY. If there's any conflict between preserving the original and applying feedback, the feedback wins. The whole point is that the user wants something DIFFERENT from what they got.`;
+
   const stream = getAnthropicClient(userApiKey).messages.stream({
     model: "claude-opus-4-6",
-    max_tokens: 16384,
+    max_tokens: 128000,
+    system: systemPrompt,
     messages: [
       {
         role: "user",
-        content: `You are an expert prompt engineer specializing in SURGICAL modifications to image generation prompts. A user generated an image and wants a SMALL, TARGETED adjustment. Your job is to apply ONLY what they asked for while keeping everything else IDENTICAL.
-
-ABSOLUTE RULES — VIOLATION OF ANY RULE IS A CRITICAL FAILURE:
-
-1. SUBJECT IDENTITY LOCK: The main subject (aircraft, vehicle, character, location) described in the original prompt MUST remain EXACTLY the same. If the prompt describes a "World War II P-51 Mustang", the modified prompt MUST still describe a "World War II P-51 Mustang" — never substitute a modern jet, different era aircraft, or different vehicle type. The subject's era, model, type, design features, markings, and visual DNA are IMMUTABLE unless the user explicitly asks to change the subject itself.
-
-2. MINIMAL DIFF PRINCIPLE: Compare your output to the original prompt. The difference should be as small as possible — like a surgical edit, not a rewrite. If the user says "change to top-angle view", you change ONLY the camera angle/perspective words. Everything else stays word-for-word identical.
-
-3. PRESERVE PROMPT LENGTH: Your output must be approximately the same length as the original. Do NOT shorten, summarize, or condense. Do NOT add lengthy new paragraphs. The original prompt's detail level is intentional.
-
-4. COPY-PASTE PRESERVATION: Sections of the original prompt that are unrelated to the feedback should appear WORD-FOR-WORD in your output. Do not rephrase, restructure, or "improve" parts the user didn't mention.
-
-5. ERA AND CONTEXT LOCK: If the scene is set in a specific historical era (WWII, Cold War, modern day, future), ALL elements must remain in that era. Do not introduce anachronistic elements.
-
-6. STYLE CONSISTENCY: The image style is Unreal Engine 5 cinematic 3D render — high-fidelity CGI with slight stylization. Maintain this unless the user explicitly requests a different style.
-
-${isCharacterPortrait ? "7. PORTRAIT FORMAT: This is a CHARACTER REFERENCE PORTRAIT — maintain the portrait format (medium close-up, clean background, direct eye contact) unless feedback specifically changes framing.\n" : ""}${contextBlock}
+        content: `${contextBlock}
 ORIGINAL PROMPT:
 """
 ${originalPrompt}
 """
 
-USER FEEDBACK (the ONLY thing that should change):
+MY FEEDBACK — apply these changes:
 """
 ${userFeedback}
 """
 
-Apply ONLY the user's feedback. Return the modified prompt text — nothing else. No JSON, no explanation, no markdown, no quotes around it.`,
+Return the modified prompt text only — no JSON, no explanation, no markdown, no quotes.`,
       },
     ],
   });
@@ -1945,6 +2238,10 @@ export async function generateSmartMotionPrompt(
       modelGuidance = "Kling 3.0 (15s, 1080p). Premium long-duration model. Since it generates 15 seconds, stretch all motion slowly and gradually across the full duration. What would be a 5-second move should unfold over 15 seconds.";
       modelMotionBudget = "slow-extended";
       break;
+    case "klingmc":
+      modelGuidance = "Kling 3.0 Motion Control (up to 10s, 1080p). Transfers motion from a reference video onto the character in the source image. Focus on describing the character pose and scene context — the motion trajectory comes from the reference video. Keep subject identity descriptions strong.";
+      modelMotionBudget = "moderate-high";
+      break;
     case "sora2pro":
       modelGuidance = "Sora 2 Pro (15s, 1080p). OpenAI model with physics-accurate motion. Excellent at realistic environmental physics (water, smoke, fabric, particles). Over 15 seconds, describe a continuous evolving motion that unfolds naturally.";
       modelMotionBudget = "slow-extended";
@@ -1969,6 +2266,9 @@ export async function generateSmartMotionPrompt(
         role: "user",
         content: `You are an expert cinematic motion director who writes motion prompts for IMAGE-TO-VIDEO AI models. Your job is to READ the image prompt deeply, UNDERSTAND what story moment it captures, and craft a UNIQUE motion prompt that brings that specific image to life cinematically.
 
+CRITICAL RULE — STORY-GROUNDED MOTION:
+Every motion prompt you write MUST be grounded in what THIS specific image depicts in the story. Do NOT write generic "cinematic camera motion" prompts. Instead, your motion direction should reflect: what is happening in this moment of the narrative, what emotion the audience should feel, and what makes this shot different from every other shot in the project. Open your prompt with a brief contextual phrase that anchors the motion in the story moment (e.g., "As the damaged aircraft limps homeward through darkening skies..." or "In the tense stillness of the command bunker..." or "The vast emptiness of the Pacific stretches before the carrier group..."). This contextual grounding is NOT dialogue or narration — it tells the video model WHAT the scene is about so it can animate appropriately.
+
 STEP 1 — ANALYZE THE IMAGE (do this mentally, don't output it):
 Read the full image prompt below and identify:
 - What is the PRIMARY SUBJECT? (person, aircraft, landscape, battle scene, etc.)
@@ -1976,6 +2276,7 @@ Read the full image prompt below and identify:
 - What is the COMPOSITION? (close-up, wide shot, aerial, ground-level, over-shoulder)
 - What ELEMENTS are present? (fire, water, smoke, clouds, dust, rain, people, vehicles, structures)
 - What MOMENT in the story is this? (calm before storm, climax of battle, quiet aftermath, hero's introduction)
+- What makes this shot DIFFERENT from a generic shot of the same subject?
 
 THE IMAGE PROMPT:
 ${imagePrompt}
@@ -1991,6 +2292,8 @@ ${rawMotionPrompt ? `DIRECTOR'S NOTE: ${rawMotionPrompt}` : ""}
 
 STEP 2 — CRAFT MOTION THAT SERVES THE STORY:
 Based on your analysis, write a motion prompt that makes this specific image feel ALIVE and CINEMATIC. Match the motion intensity to the story moment. There is NO word limit — write as much rich, detailed cinematic direction as this image deserves, up to 700 words maximum. More complex scenes with many elements deserve longer, more detailed motion prompts. Simple scenes can be shorter. Let the content dictate the length.
+
+Your prompt MUST convey what this image is about — not just "slow dolly in with atmospheric haze" but motion that reflects the specific narrative beat, environment, and emotional weight of this particular moment in the story.
 
 MOOD → MOTION MAPPING:
 - Tense/suspenseful → Slow creeping dolly, barely perceptible zoom, heavy atmosphere
@@ -2080,6 +2383,7 @@ export async function generateMotionPromptWithFeedback(
     case "hailuo": modelName = "Hailuo 2.3 (6s, 768p)"; break;
     case "veo31": modelName = "Veo 3.1 (8s, 1080p)"; break;
     case "kling": modelName = "Kling 3.0 (15s, 1080p)"; break;
+    case "klingmc": modelName = "Kling 3.0 Motion Control (10s, 1080p)"; break;
     case "sora2pro": modelName = "Sora 2 Pro (15s, 1080p)"; break;
     case "ltx23": modelName = "LTX 2.3 (8s, 1080p)"; break;
   }
@@ -2361,10 +2665,10 @@ Return ONLY the modified prompt text. No JSON, no explanation, no markdown, no q
   });
 
   const message = await stream.finalMessage();
-  const content = message.content[0];
-  if (content.type !== "text") throw new Error("Unexpected response type from Claude");
+  const scfContent = message.content[0];
+  if (scfContent.type !== "text") throw new Error("Unexpected response type from Claude");
 
-  let modifiedPrompt = content.text.trim();
+  let modifiedPrompt = scfContent.text.trim();
   if (modifiedPrompt.startsWith('"') && modifiedPrompt.endsWith('"')) {
     modifiedPrompt = modifiedPrompt.slice(1, -1);
   }
@@ -2373,4 +2677,393 @@ Return ONLY the modified prompt text. No JSON, no explanation, no markdown, no q
   }
 
   return modifiedPrompt;
+}
+
+export interface ImageQualityResult {
+  score: "pass" | "flagged";
+  feedback: string | null;
+  issues: string[];
+}
+
+export async function checkImageQuality(
+  imageUrl: string,
+  originalPrompt: string,
+  characterSignatures: Array<{ name: string; signatureFeatures: string }>,
+  sceneDescription: string,
+  userApiKey?: string,
+): Promise<ImageQualityResult> {
+  const client = getAnthropicClient(userApiKey);
+
+  const charContext = characterSignatures.length > 0
+    ? `CHARACTERS THAT SHOULD APPEAR:\n${characterSignatures.map(c => `- ${c.name}: ${c.signatureFeatures}`).join("\n")}`
+    : "No specific characters required in this scene.";
+
+  const promptSummary = originalPrompt.length > 1500
+    ? originalPrompt.substring(0, 1500) + "..."
+    : originalPrompt;
+
+  const response = await client.messages.create({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 1024,
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "image",
+            source: { type: "url", url: imageUrl },
+          },
+          {
+            type: "text",
+            text: `You are a quality control reviewer for AI-generated storyboard images. Evaluate this image against the intended scene.
+
+SCENE DESCRIPTION: ${sceneDescription}
+
+${charContext}
+
+KEY ELEMENTS FROM THE PROMPT (summarized):
+${promptSummary}
+
+EVALUATE these criteria and report ONLY genuine problems (not minor stylistic preferences):
+
+1. SCENE ACCURACY: Does the image depict what the scene describes? Wrong setting, wrong action, or completely unrelated content = flag.
+2. CHARACTER PRESENCE: Are the expected characters visible? Completely missing characters = flag. Minor appearance variation is acceptable.
+3. LIGHTING/TIME: Is the lighting roughly consistent with the described time of day? Daylight scene rendered as night = flag. Subtle lighting differences are fine.
+4. COMPOSITION: Is the image well-composed and visually clear? Severely distorted, garbled, or incoherent rendering = flag. Artistic choices are fine.
+5. TEXT/ARTIFACTS: Does the image contain unwanted text, watermarks, or UI elements? If yes = flag.
+
+IMPORTANT: Be LENIENT. AI image generation has inherent variation. Only flag genuine, obvious problems that would make the image unsuitable for a storyboard. Do NOT flag minor stylistic differences, slight color variations, or subjective artistic choices.
+
+Return JSON only (no markdown):
+{
+  "score": "pass" or "flagged",
+  "issues": ["list of specific issues found, empty if pass"],
+  "feedback": "Brief actionable feedback for regeneration if flagged, null if pass"
+}`,
+          },
+        ],
+      },
+    ],
+  });
+
+  const qcContent = response.content[0];
+  if (qcContent.type !== "text") {
+    return { score: "pass", feedback: null, issues: [] };
+  }
+
+  try {
+    const parsed = JSON.parse(qcContent.text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim());
+    return {
+      score: parsed.score === "flagged" ? "flagged" : "pass",
+      feedback: parsed.feedback || null,
+      issues: Array.isArray(parsed.issues) ? parsed.issues : [],
+    };
+  } catch {
+    return { score: "pass", feedback: null, issues: [] };
+  }
+}
+
+// ─── AI Assistant Chatbot (Full Power) ──────────────────────────────
+
+export interface AssistantAction {
+  type:
+    | "analyze_project"
+    | "generate_all_images"
+    | "regenerate_image"
+    | "edit_prompt"
+    | "regenerate_scene"
+    | "regenerate_scene_prompts"
+    | "delete_image"
+    | "retry_failed_images"
+    | "smart_regenerate"
+    | "edit_character"
+    | "regenerate_character_refs"
+    | "edit_script"
+    | "update_scene"
+    | "generate_video"
+    | "regenerate_video"
+    | "animate_scene_videos"
+    | "animate_all_videos"
+    | "remove_video"
+    | "generate_voiceover";
+  description: string;
+  params: Record<string, any>;
+}
+
+export interface AssistantResponse {
+  reply: string;
+  hasActions: boolean;
+  actions: AssistantAction[];
+}
+
+export interface AssistantMessage {
+  role: "user" | "assistant";
+  content: string;
+  imageUrls?: string[];
+}
+
+export interface ProjectContext {
+  projectId: string;
+  title: string;
+  script: string;
+  status: string;
+  sceneCount: number;
+  imageCount: number;
+  completedImages: number;
+  failedImages: number;
+  generatingImages: number;
+  totalVideos: number;
+  completedVideos: number;
+  scenes: Array<{
+    id: string;
+    sentenceIndex: number;
+    sentence: string;
+    sceneDescription: string | null;
+    mood: string | null;
+    location: string | null;
+    timeOfDay: string | null;
+    cameraAngle: string | null;
+    imageCount: number;
+    images: Array<{
+      id: string;
+      variant: number;
+      prompt: string;
+      status: string;
+      hasVideo: boolean;
+      videoStatus: string | null;
+      videoModel: string | null;
+    }>;
+  }>;
+  characters: Array<{ name: string; role: string; description: string; appearance: string; signatureFeatures?: string }>;
+  jets: Array<{ name: string; type: string; description: string }>;
+  vehicles: Array<{ name: string; type: string; description: string }>;
+  locations: Array<{ name: string; description: string }>;
+  characterRefs: Array<{ characterName: string; angle: string; status: string; hasImage: boolean }>;
+  storyBible: StoryBible | null;
+  hasVoiceover: boolean;
+  focusedSceneId?: string;
+}
+
+export async function assistantChat(
+  messages: AssistantMessage[],
+  context: ProjectContext | null,
+  userApiKey?: string,
+): Promise<AssistantResponse> {
+  const client = getAnthropicClient(userApiKey);
+
+  const projectSection = context
+    ? `
+═══════════════════════════════════════════════════════════════
+  CURRENT PROJECT: "${context.title}"
+  ID: ${context.projectId} | Status: ${context.status}
+  Scenes: ${context.sceneCount} | Images: ${context.imageCount} (${context.completedImages} done, ${context.failedImages} failed, ${context.generatingImages} in progress)
+  Videos: ${context.totalVideos} total, ${context.completedVideos} completed
+  Voiceover: ${context.hasVoiceover ? "Yes" : "None"}
+  ${context.focusedSceneId ? `FOCUSED SCENE: ${context.focusedSceneId}` : ""}
+═══════════════════════════════════════════════════════════════
+
+FULL SCRIPT (first 3000 chars):
+"""
+${context.script}
+"""
+
+SCENES:
+${context.scenes.map((s, i) => {
+  const imgs = s.images;
+  const completedImgs = imgs.filter(img => img.status === "completed").length;
+  const failedImgs = imgs.filter(img => img.status === "failed").length;
+  const videosCompleted = imgs.filter(img => img.hasVideo).length;
+  const videosGenerating = imgs.filter(img => img.videoStatus === "generating").length;
+  return `Scene ${i + 1} (ID: ${s.id}):
+  Narration: "${s.sentence}"
+  Description: ${s.sceneDescription || "N/A"}
+  Mood: ${s.mood || "N/A"} | Location: ${s.location || "N/A"} | Time: ${s.timeOfDay || "N/A"} | Camera: ${s.cameraAngle || "N/A"}
+  Images: ${s.imageCount} total (${completedImgs} done, ${failedImgs} failed) | Videos: ${videosCompleted} done, ${videosGenerating} generating
+  Image Details: ${imgs.map(img => `[${img.id} v${img.variant} ${img.status}${img.hasVideo ? " +video" : ""}${img.videoStatus === "generating" ? " (vid-gen)" : ""}]`).join(" ")}`;
+}).join("\n\n")}
+
+CHARACTERS:
+${context.characters.length > 0 ? context.characters.map(c => `- ${c.name} (${c.role}): ${c.description}
+    Appearance: ${c.appearance}${c.signatureFeatures ? `\n    Signature: ${c.signatureFeatures}` : ""}`).join("\n") : "No characters extracted yet."}
+
+${context.jets.length > 0 ? `AIRCRAFT/JETS:\n${context.jets.map(j => `- ${j.name} (${j.type}): ${j.description}`).join("\n")}` : ""}
+${context.vehicles.length > 0 ? `VEHICLES:\n${context.vehicles.map(v => `- ${v.name} (${v.type}): ${v.description}`).join("\n")}` : ""}
+${context.locations.length > 0 ? `LOCATIONS:\n${context.locations.map(l => `- ${l.name}: ${l.description}`).join("\n")}` : ""}
+
+CHARACTER REFERENCE PORTRAITS:
+${context.characterRefs.length > 0 ? context.characterRefs.map(r => `- ${r.characterName} [${r.angle}]: ${r.status}${r.hasImage ? " (has image)" : ""}`).join("\n") : "No character references generated yet."}
+`
+    : "No project is currently selected. The user is asking a general question about Sham Studio.";
+
+  const systemPrompt = `You are the AI Director embedded in Sham Studio — a professional video production and storyboard tool. You have FULL CONTROL over every aspect of the project pipeline: script, story bible, storyboard images, character references, motion/video clips, voiceover, and exports.
+
+YOU ARE AN EXPERT IN:
+- Cinematic storytelling, visual composition, and shot design
+- Image prompt engineering for photorealistic AI generation
+- Motion prompt engineering for video generation
+- Character consistency and visual continuity
+- Military/aviation/historical visual reference accuracy
+
+${projectSection}
+
+AVAILABLE VIDEO MODELS (for animate actions):
+- "grok" — Grok Imagine Video (6s, 720p, $0.128/clip) — Budget
+- "hailuo" — Hailuo 2.3 Fast (6s, 768p, $0.167/clip) — Budget
+- "seedance" — Seedance 1.5 Pro (8s, 720p, $0.20/clip) — Mid
+- "ltx23" — LTX 2.3 (8s, 1080p, $0.32/clip) — Mid
+- "veo31" — Veo 3.1 Fast (8s, 1080p, $0.64/clip) — Mid
+- "sora2pro" — Sora 2 Pro (15s, 1080p, $0.958/clip) — Premium
+- "kling" — Kling 3.0 (15s, 1080p, $1.125/clip) — Premium
+
+IMAGE MODELS (for image generation):
+NanoBanana 2 (Gemini Flash — fast, cheaper):
+- "nb2-1k" — 1K quality, $0.054/image — cheapest
+- "nb2-2k" — 2K quality, $0.081/image — great value
+- "nb2-4k" — 4K quality, $0.121/image
+NanoBanana Pro (Gemini Pro — highest fidelity):
+- "nbpro-2k" — 2K quality, $0.121/image
+- "nbpro-4k" — 4K quality, $0.192/image — best quality, most expensive
+
+RESPONSE FORMAT — ALWAYS use this exact structure:
+<response>
+{"reply": "Your message to the user", "hasActions": BOOLEAN, "actions": [ARRAY_OF_ACTIONS]}
+</response>
+
+ACTION TYPES (you can combine multiple in one response):
+
+── ANALYSIS & GENERATION ──
+1. "analyze_project" — Run full story bible + scene analysis on the project
+   params: {"mode": "fast" or "budget"}
+
+2. "generate_all_images" — Generate storyboard images for all scenes
+   params: {"imageModel": "nbpro-4k", "forceRegenerate": false}
+
+── IMAGE OPERATIONS ──
+3. "regenerate_image" — Regenerate a specific image with feedback
+   params: {"imageId": "...", "feedback": "what to change"}
+
+4. "edit_prompt" — Rewrite an image prompt with feedback then regenerate
+   params: {"imageId": "...", "feedback": "what to change in the prompt"}
+
+5. "regenerate_scene" — Regenerate ALL images in a scene with feedback
+   params: {"sceneId": "...", "feedback": "what to change across all images"}
+
+6. "regenerate_scene_prompts" — Regenerate just the prompts for a scene (without generating images)
+   params: {"sceneId": "..."}
+
+7. "delete_image" — Delete a specific image
+   params: {"imageId": "..."}
+
+8. "retry_failed_images" — Retry all failed images in the project
+   params: {}
+
+9. "smart_regenerate" — AI-powered smart retry of failed images with improved prompts
+   params: {"sceneIds": ["optional array of scene IDs to limit scope"]}
+
+── CHARACTER OPERATIONS ──
+10. "edit_character" — Update a character's visual description in the story bible
+    params: {"characterName": "...", "changes": "what to change"}
+
+11. "regenerate_character_refs" — Regenerate all reference portraits for a character
+    params: {"characterName": "..."}
+
+── SCRIPT OPERATIONS ──
+12. "edit_script" — Directly modify the project script text
+    params: {"newScript": "the complete updated script text"}
+
+13. "update_scene" — Update a scene's metadata (description, mood, location, etc.)
+    params: {"sceneId": "...", "updates": {"sceneDescription": "...", "mood": "...", "location": "...", "timeOfDay": "...", "cameraAngle": "..."}}
+
+── VIDEO / MOTION OPERATIONS ──
+14. "generate_video" — Generate a video clip from a completed image
+    params: {"imageId": "...", "videoModel": "grok", "feedback": "optional motion direction"}
+
+15. "regenerate_video" — Regenerate video for an image with motion feedback
+    params: {"imageId": "...", "videoModel": "grok", "feedback": "motion/style changes"}
+
+16. "animate_scene_videos" — Animate ALL images in a scene to video
+    params: {"sceneId": "...", "videoModel": "grok"}
+
+17. "animate_all_videos" — Animate ALL completed images in the entire project to video
+    params: {"videoModel": "grok"}
+
+18. "remove_video" — Remove the video from an image (keeping the still image)
+    params: {"imageId": "..."}
+
+── VOICEOVER ──
+19. "generate_voiceover" — Generate voiceover for the script
+    params: {"voiceId": "optional specific voice ID"}
+
+IMAGE ANALYSIS:
+When the user attaches an image, you can SEE it. Analyze it for:
+- Visual glitches, artifacts, distortions, or rendering errors
+- Character inconsistencies (wrong features, extra limbs, face issues)
+- Incorrect scene elements (wrong setting, objects, lighting)
+- Text/watermark artifacts
+- Composition or quality issues
+Then suggest specific fixes using the appropriate action (regenerate_image or edit_prompt with detailed feedback describing exactly what needs to change). Reference the specific visual problem you see.
+
+RULES:
+- ALWAYS wrap your JSON response in <response>...</response> tags
+- When suggesting actions, clearly explain what will happen and the estimated cost so the user can confirm
+- If the request is ambiguous, ask for clarification (no actions)
+- You can combine multiple actions in one response (e.g., "regenerate scene 3 images then animate them all")
+- When referring to scenes, say "Scene X" (1-based) for the user but use the actual scene ID in params
+- Be specific about which images/scenes you're targeting
+- For video model selection: recommend "veo31" for quality, "grok" for budget, "kling" or "sora2pro" for premium
+- When the user says "analyze" or "analyze the project", use analyze_project
+- When the user says "generate images" or "generate storyboard", use generate_all_images
+- When the user says "animate" or "make videos" or "create clips", use the appropriate animate action
+- For script edits, include the COMPLETE updated script text in newScript (modify the existing script, don't replace with just the changes)
+- Always estimate costs when possible (image: ~$0.19 at 4K, ~$0.12 at 2K, video: depends on model)
+- If the project hasn't been analyzed yet (status is "draft"), suggest analyzing first before generating images`;
+
+  const claudeMessages: Array<{ role: "user" | "assistant"; content: any }> = [
+    { role: "user", content: systemPrompt },
+    { role: "assistant", content: '<response>\n{"reply": "I\'m your Sham Studio AI Director. I have full control over your project — from script and story bible analysis, to storyboard images, character references, motion clips, and exports. What would you like me to do?", "hasActions": false, "actions": []}\n</response>' },
+    ...messages.map(m => {
+      if (m.imageUrls && m.imageUrls.length > 0) {
+        const contentBlocks: any[] = m.imageUrls.map(url => {
+          if (url.startsWith("data:")) {
+            const match = url.match(/^data:(image\/[^;]+);base64,(.+)$/);
+            if (match) {
+              return { type: "image", source: { type: "base64", media_type: match[1], data: match[2] } };
+            }
+          }
+          return { type: "image", source: { type: "url", url } };
+        });
+        contentBlocks.push({ type: "text", text: m.content || "Please analyze this image." });
+        return { role: m.role, content: contentBlocks };
+      }
+      return { role: m.role, content: m.content };
+    }),
+  ];
+
+  const stream = client.messages.stream({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 4096,
+    messages: claudeMessages,
+  });
+
+  const message = await stream.finalMessage();
+  const content = message.content[0];
+  if (content.type !== "text") throw new Error("Unexpected response type from Claude");
+
+  const rawText = content.text.trim();
+
+  const responseMatch = rawText.match(/<response>\s*([\s\S]*?)\s*<\/response>/);
+  if (responseMatch) {
+    try {
+      const parsed = JSON.parse(responseMatch[1]);
+      return {
+        reply: parsed.reply || rawText,
+        hasActions: parsed.hasActions || false,
+        actions: parsed.actions || [],
+      };
+    } catch {
+      return { reply: rawText.replace(/<\/?response>/g, "").trim(), hasActions: false, actions: [] };
+    }
+  }
+
+  return { reply: rawText, hasActions: false, actions: [] };
 }

@@ -1,14 +1,13 @@
 import Anthropic from "@anthropic-ai/sdk";
 
-const defaultAnthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
-
 function getClient(userApiKey?: string): Anthropic {
-  if (userApiKey) {
-    return new Anthropic({ apiKey: userApiKey });
+  const key = userApiKey || process.env.ANTHROPIC_API_KEY;
+  if (!key) {
+    throw new Error(
+      "No Anthropic API key found. Please enter your API key in Settings (gear icon) or set the ANTHROPIC_API_KEY environment variable."
+    );
   }
-  return defaultAnthropic;
+  return new Anthropic({ apiKey: key });
 }
 
 export interface BatchRequest {

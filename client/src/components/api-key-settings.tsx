@@ -66,7 +66,7 @@ export function ApiKeySettings() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <button className="ios-btn ios-btn-secondary">
+        <button className="flat-btn">
           <Settings className="w-4 h-4" />
           API Keys
         </button>

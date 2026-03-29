@@ -175,7 +175,7 @@ export default function WriteScript() {
   };
 
   const wordCount = generatedScript.trim() ? generatedScript.trim().split(/\s+/).length : 0;
-  const selectedVoice = voices?.find((v) => v.voice_id === selectedVoiceId);
+  const selectedVoice = voices?.find((v) => v.voice_id === selectedVoiceId || v.name === selectedVoiceId);
   const wordEstimate = minutesToWords(durationMinutes);
 
   const stepOrder: StepId[] = ["topic", "script", "voiceover", "project"];
@@ -209,11 +209,11 @@ export default function WriteScript() {
         </Link>
 
         <div className="flex items-center gap-3 mb-8">
-          <div className="w-10 h-10 rounded-lg gradient-btn flex items-center justify-center glow-sm">
+          <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
             <PenTool className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight gradient-text">AI Script Writer</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-[#e5e5e5]">AI Script Writer</h1>
             <p className="text-muted-foreground text-sm">
               Topic, script, voiceover, project — all connected
             </p>
@@ -236,16 +236,16 @@ export default function WriteScript() {
                     <div
                       className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold transition-all duration-500 flex-shrink-0 ${
                         active
-                          ? "gradient-btn text-white glow-sm scale-110"
+                          ? "bg-primary text-white"
                           : done
                           ? "bg-green-500/20 text-green-400 border border-green-500/30"
-                          : "glass-card text-muted-foreground border border-[var(--glass-border)]"
+                          : "text-muted-foreground border border-[#1a1a1a]"
                       }`}
                     >
                       {done ? <Check className="w-4 h-4" /> : active ? <Icon className="w-4 h-4" /> : s.number}
                     </div>
                     {i < steps.length - 1 && (
-                      <div className={`w-0.5 flex-1 min-h-[16px] transition-all duration-500 ${done ? "bg-gradient-to-b from-green-500/40 to-green-500/10" : "bg-[var(--glass-border)]"}`} />
+                      <div className={`w-0.5 flex-1 min-h-[16px] transition-all duration-500 ${done ? "bg-green-500/20" : "bg-[#1a1a1a]"}`} />
                     )}
                   </div>
 
@@ -267,13 +267,13 @@ export default function WriteScript() {
                     {s.id === "topic" && (
                       <>
                         {(active || isGenerating) && !done && (
-                          <Card className="glass-card rounded-xl overflow-hidden animate-in fade-in slide-in-from-left-2 duration-300">
+                          <Card className="rounded-xl overflow-hidden animate-in fade-in slide-in-from-left-2 duration-300">
                             <div className="p-5 space-y-4">
                               <div>
                                 <Label className="text-xs text-muted-foreground mb-1.5 block">Video Topic</Label>
                                 <Textarea
                                   placeholder="e.g. The story of how a single F-117 Nighthawk stealth fighter was shot down over Serbia in 1999..."
-                                  className="min-h-[100px] text-sm leading-relaxed glass-input rounded-xl"
+                                  className="min-h-[100px] text-sm leading-relaxed surface-input rounded-xl"
                                   value={topic}
                                   onChange={(e) => setTopic(e.target.value)}
                                   autoFocus
@@ -284,9 +284,9 @@ export default function WriteScript() {
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div>
                                   <Label className="text-xs text-muted-foreground mb-1.5 block">Duration</Label>
-                                  <div className="glass-input rounded-xl p-3">
+                                  <div className="surface-input rounded-xl p-3">
                                     <div className="flex items-center justify-between mb-2">
-                                      <span className="text-xl font-bold gradient-text">{durationMinutes} min</span>
+                                      <span className="text-xl font-bold text-[#e5e5e5]">{durationMinutes} min</span>
                                       <span className="text-xs text-muted-foreground">
                                         ~{wordEstimate.min.toLocaleString()}-{wordEstimate.max.toLocaleString()} words
                                       </span>
@@ -316,7 +316,7 @@ export default function WriteScript() {
                                   <div className="relative" ref={nicheDropdownRef}>
                                     <div
                                       onClick={() => !isGenerating && readyNiches.length > 0 && setShowNicheDropdown(!showNicheDropdown)}
-                                      className={`glass-input rounded-xl p-3 flex items-center justify-between text-sm ${readyNiches.length > 0 && !isGenerating ? "cursor-pointer" : ""}`}
+                                      className={`surface-input rounded-xl p-3 flex items-center justify-between text-sm ${readyNiches.length > 0 && !isGenerating ? "cursor-pointer" : ""}`}
                                     >
                                       <div className="flex items-center gap-2 min-w-0">
                                         <GraduationCap className={`w-4 h-4 flex-shrink-0 ${selectedNiche ? "text-purple-400" : "text-muted-foreground"}`} />
@@ -348,7 +348,7 @@ export default function WriteScript() {
                                     </div>
 
                                     {showNicheDropdown && (
-                                      <div className="absolute top-full left-0 right-0 mt-1.5 glass-card border border-[var(--glass-border)] rounded-xl overflow-hidden z-50 shadow-xl max-h-[200px] overflow-y-auto">
+                                      <div className="absolute top-full left-0 right-0 mt-1.5 border border-[#1a1a1a] rounded-xl overflow-hidden z-50 max-h-[200px] overflow-y-auto">
                                         <div
                                           onClick={() => { setSelectedNicheId(null); setShowNicheDropdown(false); }}
                                           className={`flex items-center gap-2.5 p-2.5 text-sm cursor-pointer transition-colors hover:bg-white/5 ${!selectedNicheId ? "bg-white/5" : ""}`}
@@ -360,7 +360,7 @@ export default function WriteScript() {
                                           <div
                                             key={niche.id}
                                             onClick={() => { setSelectedNicheId(niche.id); setShowNicheDropdown(false); }}
-                                            className={`flex items-center gap-2.5 p-2.5 text-sm cursor-pointer transition-colors hover:bg-white/5 border-t border-[var(--glass-border)] ${selectedNicheId === niche.id ? "bg-purple-500/10" : ""}`}
+                                            className={`flex items-center gap-2.5 p-2.5 text-sm cursor-pointer transition-colors hover:bg-white/5 border-t border-[#1a1a1a] ${selectedNicheId === niche.id ? "bg-purple-500/10" : ""}`}
                                           >
                                             <GraduationCap className={`w-3.5 h-3.5 ${selectedNicheId === niche.id ? "text-purple-400" : "text-muted-foreground"}`} />
                                             <div className="min-w-0 flex-1">
@@ -379,8 +379,8 @@ export default function WriteScript() {
                               {isGenerating ? (
                                 <div className="flex items-center justify-center gap-3 py-3">
                                   <div className="relative w-8 h-8">
-                                    <div className="absolute inset-0 rounded-full gradient-btn opacity-30 animate-ping" />
-                                    <div className="relative w-8 h-8 rounded-full gradient-btn flex items-center justify-center">
+                                    <div className="absolute inset-0 rounded-full bg-primary opacity-30 animate-ping" />
+                                    <div className="relative w-8 h-8 rounded-full bg-primary flex items-center justify-center">
                                       <Loader2 className="w-4 h-4 text-white animate-spin" />
                                     </div>
                                   </div>
@@ -401,11 +401,11 @@ export default function WriteScript() {
                                   <button
                                     onClick={handleGenerate}
                                     disabled={!topic.trim()}
-                                    className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300
-                                      ${topic.trim()
-                                        ? "gradient-btn text-white glow-sm hover:glow-md hover:scale-[1.02] active:scale-[0.98]"
+                                    className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 ${
+                                      topic.trim()
+                                        ? "bg-primary text-white"
                                         : "bg-white/5 border border-white/10 text-muted-foreground cursor-not-allowed opacity-50"
-                                      }`}
+                                    }`}
                                   >
                                     <Sparkles className="w-4 h-4" />
                                     Generate Script
@@ -428,7 +428,7 @@ export default function WriteScript() {
                     {s.id === "script" && (
                       <>
                         {active && (
-                          <Card className="glass-card rounded-xl overflow-hidden animate-in fade-in slide-in-from-left-2 duration-300">
+                          <Card className="rounded-xl overflow-hidden animate-in fade-in slide-in-from-left-2 duration-300">
                             <div className="p-5 space-y-4">
                               <div className="flex items-center justify-between">
                                 <div>
@@ -443,7 +443,7 @@ export default function WriteScript() {
                                     generateScriptMutation.mutate();
                                   }}
                                   disabled={generateScriptMutation.isPending}
-                                  className="ghost-btn text-xs px-3 py-1.5 rounded-lg"
+                                  className="flat-btn-ghost text-xs px-3 py-1.5 rounded-lg"
                                 >
                                   {generateScriptMutation.isPending ? (
                                     <Loader2 className="w-3 h-3 animate-spin" />
@@ -457,13 +457,13 @@ export default function WriteScript() {
                               <Textarea
                                 value={generatedScript}
                                 onChange={(e) => setGeneratedScript(e.target.value)}
-                                className="min-h-[300px] text-sm leading-relaxed glass-input rounded-xl"
+                                className="min-h-[300px] text-sm leading-relaxed surface-input rounded-xl"
                               />
 
                               <div className="flex justify-end">
                                 <button
                                   onClick={() => setActiveStep("voiceover")}
-                                  className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold gradient-btn text-white glow-sm hover:glow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-300"
+                                  className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold bg-primary text-white transition-all duration-300"
                                 >
                                   Approve & Continue
                                   <ArrowRight className="w-4 h-4" />
@@ -488,14 +488,14 @@ export default function WriteScript() {
                     {s.id === "voiceover" && (
                       <>
                         {active && (
-                          <Card className="glass-card rounded-xl overflow-hidden animate-in fade-in slide-in-from-left-2 duration-300">
+                          <Card className="rounded-xl overflow-hidden animate-in fade-in slide-in-from-left-2 duration-300">
                             <div className="p-5 space-y-4">
                               <div className="space-y-2">
                                 <Label className="text-xs text-muted-foreground">Voice</Label>
                                 <div className="relative" ref={dropdownRef}>
                                   <div
                                     onClick={() => setShowVoiceDropdown(!showVoiceDropdown)}
-                                    className="glass-input rounded-xl p-3 flex items-center justify-between text-sm cursor-pointer"
+                                    className="surface-input rounded-xl p-3 flex items-center justify-between text-sm cursor-pointer"
                                   >
                                     <span className="flex items-center gap-2">
                                       <Volume2 className="w-4 h-4 text-muted-foreground" />
@@ -513,7 +513,7 @@ export default function WriteScript() {
                                     <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${showVoiceDropdown ? "rotate-180" : ""}`} />
                                   </div>
                                   {showVoiceDropdown && voices && (
-                                    <div className="absolute top-full left-0 right-0 mt-1 z-50 rounded-xl border border-[var(--glass-border)] max-h-72 overflow-y-auto shadow-xl bg-white/80 dark:bg-[hsl(220,15%,8%)]/95 backdrop-blur-2xl">
+                                    <div className="absolute top-full left-0 right-0 mt-1 z-50 rounded-xl border border-[#1a1a1a] max-h-72 overflow-y-auto bg-[#111]">
                                       {voices.map((voice) => (
                                         <div
                                           key={voice.voice_id}
@@ -522,7 +522,7 @@ export default function WriteScript() {
                                             setShowCustomVoice(false);
                                             setShowVoiceDropdown(false);
                                           }}
-                                          className={`px-4 py-2.5 hover:bg-[var(--glass-highlight)] transition-colors flex items-center justify-between cursor-pointer border-b border-[var(--glass-border)] last:border-b-0 ${
+                                          className={`px-4 py-2.5 hover:bg-[rgba(255,255,255,0.05)] transition-colors flex items-center justify-between cursor-pointer border-b border-[#1a1a1a] last:border-b-0 ${
                                             !showCustomVoice && selectedVoiceId === voice.voice_id ? "bg-blue-500/5" : ""
                                           }`}
                                         >
@@ -544,7 +544,7 @@ export default function WriteScript() {
                                           setShowCustomVoice(true);
                                           setShowVoiceDropdown(false);
                                         }}
-                                        className={`px-4 py-2.5 hover:bg-[var(--glass-highlight)] transition-colors flex items-center gap-2 cursor-pointer border-t border-[var(--glass-border)] ${
+                                        className={`px-4 py-2.5 hover:bg-[rgba(255,255,255,0.05)] transition-colors flex items-center gap-2 cursor-pointer border-t border-[#1a1a1a] ${
                                           showCustomVoice ? "bg-purple-500/5" : ""
                                         }`}
                                       >
@@ -575,7 +575,7 @@ export default function WriteScript() {
                                       }
                                     }}
                                     placeholder="e.g. JBFqnCBsd6RMkjVDRZzb or a voice name"
-                                    className="w-full glass-input rounded-xl p-3 text-sm"
+                                    className="w-full surface-input rounded-xl p-3 text-sm"
                                   />
                                   <p className="text-[10px] text-muted-foreground/60">
                                     Paste any ElevenLabs voice ID or name supported by the API
@@ -587,10 +587,7 @@ export default function WriteScript() {
                                 <button
                                   onClick={() => voiceoverMutation.mutate()}
                                   disabled={voiceoverMutation.isPending || (showCustomVoice && !customVoiceId.trim())}
-                                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold
-                                    bg-white/10 dark:bg-white/[0.08] backdrop-blur-xl border border-white/20 dark:border-white/[0.12] text-foreground
-                                    shadow-lg hover:bg-white/15 dark:hover:bg-white/[0.12] hover:scale-[1.02] active:scale-[0.98]
-                                    transition-all duration-300 disabled:opacity-50 disabled:pointer-events-none"
+                                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold bg-white/10 border border-white/20 text-foreground hover:bg-white/15 transition-all duration-300 disabled:opacity-50 disabled:pointer-events-none"
                                 >
                                   {voiceoverMutation.isPending ? (
                                     <><Loader2 className="w-4 h-4 animate-spin" /> Generating...</>
@@ -607,7 +604,7 @@ export default function WriteScript() {
                                       voiceoverMutation.mutate();
                                     }}
                                     disabled={voiceoverMutation.isPending}
-                                    className="ghost-btn text-xs px-3 py-1.5 rounded-lg"
+                                    className="flat-btn-ghost text-xs px-3 py-1.5 rounded-lg"
                                   >
                                     <RotateCcw className="w-3 h-3" /> Redo
                                   </button>
@@ -640,10 +637,10 @@ export default function WriteScript() {
                                       · {showCustomVoice ? customVoiceId : (selectedVoice?.name || selectedVoiceId)}
                                     </span>
                                   </div>
-                                  <div className="flex items-center gap-3 p-3 rounded-xl glass-card border border-[var(--glass-border)]">
+                                  <div className="flex items-center gap-3 p-3 rounded-xl border border-[#1a1a1a]">
                                     <button
                                       onClick={togglePlayback}
-                                      className="w-10 h-10 rounded-full gradient-btn flex items-center justify-center shrink-0 glow-sm hover:glow-md transition-all active:scale-95"
+                                      className="w-10 h-10 rounded-full bg-primary flex items-center justify-center shrink-0 transition-all active:scale-95"
                                     >
                                       {isPlaying ? <Pause className="w-4 h-4 text-white" /> : <Play className="w-4 h-4 text-white ml-0.5" />}
                                     </button>
@@ -667,7 +664,7 @@ export default function WriteScript() {
                                     createProjectMutation.mutate();
                                   }}
                                   disabled={createProjectMutation.isPending}
-                                  className="ghost-btn text-xs px-4 py-2 rounded-lg"
+                                  className="flat-btn-ghost text-xs px-4 py-2 rounded-lg"
                                 >
                                   Skip Voiceover <ArrowRight className="w-3 h-3" />
                                 </button>
@@ -677,11 +674,11 @@ export default function WriteScript() {
                                     createProjectMutation.mutate();
                                   }}
                                   disabled={!voiceoverUrl || createProjectMutation.isPending}
-                                  className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300
-                                    ${voiceoverUrl
-                                      ? "gradient-btn text-white glow-sm hover:glow-md hover:scale-[1.02] active:scale-[0.98]"
+                                  className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 ${
+                                    voiceoverUrl
+                                      ? "bg-primary text-white"
                                       : "bg-white/5 border border-white/10 text-muted-foreground cursor-not-allowed opacity-50"
-                                    }`}
+                                  }`}
                                 >
                                   Create Project <ArrowRight className="w-4 h-4" />
                                 </button>
@@ -710,11 +707,11 @@ export default function WriteScript() {
                     {s.id === "project" && (
                       <>
                         {active && (
-                          <Card className="glass-card rounded-xl overflow-hidden animate-in fade-in slide-in-from-left-2 duration-300">
+                          <Card className="rounded-xl overflow-hidden animate-in fade-in slide-in-from-left-2 duration-300">
                             <div className="p-8 text-center">
                               <div className="relative w-14 h-14 mx-auto mb-4">
-                                <div className="absolute inset-0 rounded-full gradient-btn opacity-20 animate-ping" />
-                                <div className="relative w-14 h-14 rounded-full gradient-btn flex items-center justify-center glow-md">
+                                <div className="absolute inset-0 rounded-full bg-primary opacity-20 animate-ping" />
+                                <div className="relative w-14 h-14 rounded-full bg-primary flex items-center justify-center">
                                   <Loader2 className="w-6 h-6 text-white animate-spin" />
                                 </div>
                               </div>

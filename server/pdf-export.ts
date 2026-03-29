@@ -420,16 +420,17 @@ export async function streamStoryBiblePDF(
       );
 
       if (charPortraits.length > 0) {
-        const portraitW = Math.min(140, (pageW - 30) / 3);
-        const portraitH = portraitW * 1.2;
+        const angleOrder = ["front", "three-quarter", "closeup"];
+        const sorted = [...charPortraits].sort(
+          (a, b) => angleOrder.indexOf(a.angle) - angleOrder.indexOf(b.angle)
+        );
+        const cols = Math.min(sorted.length, 3);
+        const portraitW = Math.min(120, (pageW - 30) / cols);
+        const portraitH = portraitW * (16 / 9);
         if (doc.y + portraitH + 20 > doc.page.height - 50) {
           doc.addPage();
           drawPageBg(doc);
         }
-        const angleOrder = ["front", "three-quarter", "profile"];
-        const sorted = [...charPortraits].sort(
-          (a, b) => angleOrder.indexOf(a.angle) - angleOrder.indexOf(b.angle)
-        );
         const startX = 52;
         const startY = doc.y;
         for (let pi = 0; pi < sorted.length; pi++) {
@@ -437,14 +438,15 @@ export async function streamStoryBiblePDF(
           const buf = imgCache.get(portrait.imageUrl!);
           if (buf) {
             try {
-              const px = startX + pi * (portraitW + 8);
+              const px = startX + pi * (portraitW + 6);
               doc.image(buf, px, startY, {
                 width: portraitW,
                 height: portraitH,
                 fit: [portraitW, portraitH],
               });
               doc.fillColor(DIM).fontSize(7).font("Helvetica");
-              doc.text(portrait.angle, px, startY + portraitH + 2, {
+              const label = portrait.angle === "closeup" ? "Close-Up" : portrait.angle;
+              doc.text(label, px, startY + portraitH + 2, {
                 width: portraitW,
                 align: "center",
               });
